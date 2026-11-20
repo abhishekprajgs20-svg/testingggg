@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, shell } = require('electron');
+const { app, BrowserWindow, session, shell, ipcMain, net } = require('electron');
 const path = require('node:path');
 
 app.setName('QUIZINOX');
@@ -43,6 +43,17 @@ function createWindow() {
   });
   return win;
 }
+
+// Current Affairs Hub: fetch RSS/article text from the main process (no browser CORS limits). http(s) only, text only, size-capped.
+ipcMain.handle('quizinox:fetch-text', async (_e, url) => {
+  try {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { ok: false, error: 'Only http(s) addresses are allowed.' };
+    const res = await net.fetch(url, { headers: { 'User-Agent': 'QUIZINOX/3.0 (+reader)', Accept: 'application/rss+xml, application/xml, text/xml, text/html, */*' }, signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+    const text = await res.text();
+    return { ok: true, text: text.slice(0, 3000000) };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
 
 app.whenReady().then(() => {
   // Keep generated exports easy to find on Windows.

@@ -189,21 +189,21 @@ The installer will be created in `release/QUIZINOX-Setup-2.4.0.exe`. For a no-in
 **Result screen:** ATTEMPT MISTAKES · ATTEMPT CORRECT · PRACTISE MISTAKES now sit at the **top**, above the answer review (same code on Windows and Android).
 
 
-## QUIZINOX 2.10.0 — UPSC Preparation Centre
+## QUIZINOX 3.0.0 — UPSC Preparation Centre
+A new sidebar group (and a "UPSC Preparation Centre" entry in the mobile **More** menu) adds seven modules. All existing features are unchanged.
 
-This release adds an integrated UPSC Preparation Centre while retaining the existing quiz, PYQ, notes, revision, analytics, AI Studio, File Studio, mock-test, achievements and settings modules.
+| Module | What it does |
+|---|---|
+| **UPSC Overview** | Exam structure, marks, eligibility, services (expandable cards); 3-stage strategy with tickable tasks and progress; 8 subject strategies; Prelims & Mains panels |
+| **Syllabus Tracker** | ~460 micro-topics: Exam → Paper → Subject → Unit → Topic → Subtopic → Micro-topic; 3 statuses, priority, notes, dates, revision log, related quizzes/notes, Practice (existing quiz engine) or Generate (existing AI generator); custom topics for your Optional |
+| **Memorisation Lab** | 14 categories (~340 facts), interactive India map for National Parks, active recall (reveal or MCQ), mastery analytics, JSON import to extend/correct, one-tap flashcards |
+| **Flashcards** | Decks, flip animation, Again/Hard/Easy (10 min / 2 d / 7 d defaults, adjustable), adaptive SM-2-style scheduler, TXT/JSON import & export, AI generation with review, analytics |
+| **AI Study Planner** | Tasks, day/week/month calendar, missed-task rescheduling with light-day suggestions, session timer, productivity analytics, optional AI plan (uses syllabus progress, weak topics, due cards, exam date) |
+| **Current Affairs Hub** | Your RSS sources, offline article store, filters, bookmarks/notes/read/revision, AI analysis based only on retrieved text, facts → flashcards, practice questions via the existing generator |
+| **AI Doubt Solver** | Chat with history, 10 explanation modes, context from quiz questions / your mistakes / topics / notes, voice input, copy / regenerate / clear |
 
-### Added modules
-- **UPSC Overview:** stage-wise preparation guidance, subject panels, and Prelims/Mains strategy.
-- **Syllabus Tracker:** starter paper/subject/topic map with locally persisted Not Started, In Progress and Completed statuses.
-- **Memorisation Lab:** 14 factual-learning categories and user-managed recall prompts. Add the verified answer and its source/reference; no unverified factual dataset is presented as authoritative.
-- **Flashcards:** create local cards and review due cards using Again (10 minutes), Hard (2 days) and Easy (7 days) initial intervals.
-- **AI Study Planner:** local task scheduling and completion tracking, plus an optional AI-generated weekly plan using existing QUIZINOX AI configuration.
-- **Current Affairs Hub:** locally saved, dated, categorised article notes with source attribution and read/unread state. This build does not claim to provide a live news feed.
-- **AI Doubt Solver:** conversational UPSC tutor using the existing configured AI provider/model and existing API settings.
+**Data & AI.** Everything is stored in the existing local store under `db.upsc` (included in backup/restore; merge-restore merges it). No new AI settings: all AI calls go through the existing providers, keys and fallback. Without AI, the planner, flashcards, memorisation lab, syllabus tracker and overview work fully.
 
-### Data and backup
-New module data is stored under the separate `quizinox_upsc_centre_v1` local storage key to avoid changing the established quiz database schema. The existing backup export now includes this data; merge and replace restore paths also restore the new module data. No existing quiz or note records are rewritten by the new modules.
+**Current Affairs fetching.** Android uses native HTTP (`CapacitorHttp`), Windows uses an Electron main-process fetch (http/https text only). A plain browser may be blocked by CORS — use *Paste article*. Default feeds can be changed under ⚙ Sources.
 
-### Build
-The existing Vite, Capacitor and Electron build commands remain unchanged. Run `npm install`, then `npm run build`. Android and Windows packaging continue to use the existing project workflows.
+**Honest limits.** Memorisation datasets are starter sets (see in-app source notes) — not complete lists; import JSON to extend them. The map outline is a simplified silhouette (no state borders); markers use real approximate coordinates.
