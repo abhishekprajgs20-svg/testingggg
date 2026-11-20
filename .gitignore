@@ -1,0 +1,10 @@
+node_modules/
+dist/
+android/
+.vite/
+*.apk
+.DS_Store
+package-lock.json
+
+release/
+out/

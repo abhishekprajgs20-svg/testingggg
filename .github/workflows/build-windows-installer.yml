@@ -1,0 +1,33 @@
+name: Build QUIZINOX Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/**"
+      - "public/**"
+      - "electron/**"
+      - "package.json"
+      - "vite.config.js"
+      - ".github/workflows/build-windows-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Build Windows installer (disable auto-publishing)
+        run: npm run desktop:dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QUIZINOX-Windows-Installer
+          path: release/*.exe
+          if-no-files-found: error

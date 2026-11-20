@@ -1,0 +1,9 @@
+{
+  "appId": "com.quizinox.offline",
+  "appName": "QUIZINOX",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  }
+}
