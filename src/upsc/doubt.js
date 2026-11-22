@@ -49,7 +49,7 @@ async function run(text) {
   const c = conv(), d = D(); busy = true; page(C); ctl = new AbortController();
   const hist = c.msgs.filter(m => !m.err).slice(-8, -1).map(m => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.text.slice(0, 1200)}`).join('\n');
   const prompt = `${hist ? 'Earlier in this conversation:\n' + hist + '\n\n' : ''}${ctxItem ? `Material the student selected (${ctxItem.kind}) — use it as context:\n"""\n${ctxItem.text.slice(0, 7000)}\n"""\n\n` : ''}Mode: ${MODES[d.mode][0]}. ${MODES[d.mode][1]}\n${STRUCT}\nAnswer in the language the student writes in (English unless they ask otherwise).\n\nStudent's question: ${text}`;
-  try { const r = await ask(prompt, { json: false, system: SYSTEM_UPSC, maxTokens: 3000, signal: ctl.signal, onStatus: m => { const s = $('#chSt'); if (s) s.textContent = m; } }); c.msgs.push({ role: 'ai', text: r.text, model: `${C.AI.providerName(r.provider)} · ${C.AI.modelLabel(r.provider, r.model)}` }); }
+  try { const r = await ask(prompt, { json: false, system: SYSTEM_UPSC, maxTokens: 3000, signal: ctl.signal, noLog: true, onStatus: m => { const s = $('#chSt'); if (s) s.textContent = m; } }); c.msgs.push({ role: 'ai', text: r.text, model: `${C.AI.providerName(r.provider)} · ${C.AI.modelLabel(r.provider, r.model)}` }); }
   catch (e) { c.msgs.push({ role: 'ai', err: true, text: e.code === 'abort' ? 'Stopped.' : e.message }); }
   busy = false; ctl = null; persist(); if (C.db.activeTab === 'doubt') page(C);
 }

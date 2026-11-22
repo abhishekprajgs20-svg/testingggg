@@ -3,6 +3,11 @@ import { fixQuestionsFile, convertFormat, parseText as parseMcqText } from './te
 import { saveFile, shareFile, onBackButton, isNative } from './native.js';
 import * as AI from './ai.js';
 import * as Store from './storage.js';
+import { translateTexts, gtRaw } from './translate.js';
+import { renderStem, renderOpt, hasOptFigs, generateNonVerbal, NV_KINDS, NV_ALL } from './figures.js';
+import { EXPL_TYPES, explRule, explPer, VERBAL_TYPES, RESPONSE_MODES, LENGTHS } from './ai-modes.js';
+import { initAssist, openAssist, answerPrompt, SYSTEM_PROMPT, recentFor, clearLog, showAnswer } from './ai-assist.js';
+window.__qxGT = (q, sl, tl) => gtRaw(q, sl, tl); // used by the TXT/PDF translator tool (iframe)
 import { UPSC_NAV, UPSC_TABS, UPSC_LABELS, mergeUpsc, upscHomeHtml } from './upsc/lite.js';
 const iconUrl = './quizinox-icon.png';
 // Keep the quiz/player startup bundle light. PDF engines and jsPDF are loaded
@@ -36,7 +41,7 @@ function explanationLines(value) {
 }
 const L = i => String.fromCharCode(65 + i);
 const STORE = 'quizinox_local_v1', PLAY_STORE = 'quizinox_play_v1';
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.1.0';
 const defaultState = () => ({ quizzes: [], attempts: [], notebook: { items: {} }, notebookSeeded: false, achSeen: [], analyser: [], shuffleHistory: {}, bookmarks: {}, revision: {}, revStats: { mastered: 0 }, aiAnalysis: null, aiLog: {}, settings: { name: 'Learner', geminiKey: '', aiKeys: [], aiModel: AI.FALLBACK_CHAIN[0], aiModels: {}, aiPrimary: 'gemini', aiMode: 'auto', aiOrder: AI.DEFAULT_ORDER.slice(), aiDisabled: {}, aiCross: true, aiGuard: true, puterLinked: false, puterModel: '', customBaseUrl: '', aiModelLists: {}, aiAutoFallback: true, analystDaily: 5, tutorLang: 'English', langMode: 'single', langs: ['original'], aiSource: 'default', aiLogin: { enabled: {}, models: {}, order: [], modelList: [] }, aiWeb: { site: 'chatgpt', customUrl: '' } }, activeTab: 'home' });
 let db = load();
 let currentQuiz = null, play = null, toastTimer = null, lastResult = null;
@@ -72,21 +77,25 @@ function savePlay() { try { if (play && !play.finished) { tickTime(play); Store.
 function updateCounts() { const q = $('#quizCount'); if (q) q.textContent = db.quizzes.length; const r = $('#revCount'); if (r) { const n = dueItems().length; r.textContent = n; r.hidden = !n; } }
 function toast(msg, ms = 2800) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms); }
 function question(text = '', options = ['', '', '', ''], correct = 0, explanation = '', topic = '') { return { id: uid(), text, options, correct: Number(correct) || 0, explanation, topic }; }
+const figStem = q => (q?.fig ? `<div class="fig-stem">${renderStem(q.fig)}</div>` : '');
+const figOpt = (q, orig) => (q?.fig && hasOptFigs(q.fig) ? `<span class="fig-opt">${renderOpt(q.fig, orig)}</span>` : '');
 function quizTemplate(title = 'Untitled Quiz') { const now = new Date().toISOString(); return { id: uid(), title, description: '', subject: 'General', createdAt: now, updatedAt: now, settings: { timer: 0, negative: 0, shuffleQ: false, shuffleO: false, pass: 40 }, questions: [] }; }
 const parseText = t => parseMcqText(t, question);
 
 /* ------------------------------ MODALS ------------------------------ */
 function modal(html, { wide = false } = {}) {
+  const parent = $$('.mode-overlay[data-parked]').pop() || null; // an action sheet this dialog was opened from
   const m = document.createElement('div'); m.className = 'mode-overlay';
-  m.innerHTML = `<div class="mode-dialog ${wide ? 'wide' : ''}"><button class="mode-close" aria-label="Close">×</button>${html}</div>`;
+  m.innerHTML = `<div class="mode-dialog ${wide ? 'wide' : ''}"><button class="mode-close" aria-label="Close">×</button>${parent ? '<button class="mode-back" aria-label="Back">‹ Back</button>' : ''}${html}</div>`;
   document.body.appendChild(m);
-  const close = () => m.remove();
+  const close = () => { m.remove(); $$('.mode-overlay[data-parked]').forEach(x => x.remove()); };
   $('.mode-close', m).onclick = close; m.addEventListener('click', e => { if (e.target === m) close(); });
+  const bk = $('.mode-back', m); if (bk) bk.onclick = () => { m.remove(); if (parent && parent.isConnected) { parent.style.display = ''; delete parent.dataset.parked; } };
   return { el: m, close };
 }
 function actionSheet(title, subtitle, actions) {
   const { el, close } = modal(`<div class="eyebrow">QUICK ACTIONS</div><h2>${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}${actions.map((a, i) => `<button class="mode-choice ${a.danger ? 'danger-choice' : ''}" data-act="${i}"><span class="mode-icon ${a.cls || 'exam-icon'}">${a.icon}</span><span><b>${esc(a.label)}</b>${a.hint ? `<small>${esc(a.hint)}</small>` : ''}</span><span class="mode-arrow">→</span></button>`).join('')}`);
-  $$('[data-act]', el).forEach(b => b.onclick = () => { close(); actions[Number(b.dataset.act)].run(); });
+  $$('[data-act]', el).forEach(b => b.onclick = () => { el.style.display = 'none'; el.dataset.parked = '1'; actions[Number(b.dataset.act)].run(); setTimeout(() => { if (el.dataset.parked && !$$('.mode-overlay').some(x => x !== el && !x.dataset.parked)) el.remove(); }, 60); });
 }
 function confirmBox(title, text, okLabel = 'Yes', danger = false) {
   return new Promise(res => {
@@ -123,7 +132,7 @@ document.querySelector('#app').innerHTML = `
     <div class="sidebottom"><div class="offline-pill"><i></i> Works offline</div><small>All quiz data stays on this device. AI tools use the internet only when you start them.</small><div class="version">QUIZINOX · v${APP_VERSION}</div></div>
   </aside>
   <main class="main">
-    <header class="topbar"><button class="mobile-brand" data-tab="home"><img src="${iconUrl}" alt=""/> <b>QUIZINOX</b></button><div class="crumb" id="crumb">Your learning space</div><div class="top-actions"><span class="online-state" id="netState"><i></i> OFFLINE</span><button class="iconbtn" id="quickImport" title="Import">⇧</button><button class="avatar small" data-tab="settings">⚙</button></div></header>
+    <header class="topbar"><button class="mobile-brand" data-tab="home"><img src="${iconUrl}" alt=""/> <b>QUIZINOX</b></button><button class="iconbtn back-btn" id="backBtn" title="Back (Alt+←)" aria-label="Back" hidden>‹</button><div class="crumb" id="crumb">Your learning space</div><div class="top-actions"><span class="online-state" id="netState"><i></i> OFFLINE</span><button class="iconbtn" id="quickImport" title="Import">⇧</button><button class="avatar small" data-tab="settings">⚙</button></div></header>
     <section class="content" id="view"></section>
   </main>
 </div>
@@ -141,7 +150,25 @@ Object.assign(labels, UPSC_LABELS);
 const MORE_TABS = [...UPSC_TABS, 'create', 'ai', 'tools', 'settings', 'mocks', 'notebook', 'achievements', 'analyser', 'predictor'];
 function markNav(tab) { $$('.navitem,.mobile-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab || (b.hasAttribute('data-more') && MORE_TABS.includes(tab)))); }
 function scrollTop() { window.scrollTo(0, 0); $('.main')?.scrollTo?.(0, 0); }
-function setTab(tab) { if (play) return; db.activeTab = tab; save(); markNav(tab); $('#crumb').textContent = labels[tab] || 'QUIZINOX'; lastResult = null; render(); scrollTop(); }
+const navStack = []; let navBusy = false;
+function navPush(e) { if (navBusy) return; const top = navStack[navStack.length - 1]; if (top && top.key === e.key) { top.fn = e.fn; top.tab = e.tab; } else { navStack.push(e); if (navStack.length > 40) navStack.shift(); } updateBackBtn(); }
+function updateBackBtn() { const b = $('#backBtn'); if (b) b.hidden = navStack.length <= 1 && (db.activeTab || 'home') === 'home' && !lastResult; }
+/** Back: close the top dialog (or step back inside it) → leave a quiz (with confirmation) → previous screen/step → Home. Returns false when nothing is left (app may exit). */
+function goBack() {
+  const open = $$('.mode-overlay:not([data-parked])'); if (open.length) { const top = open[open.length - 1]; const bk = $('.mode-back', top); if (bk) bk.click(); else top.remove(); return true; }
+  $$('.mode-overlay[data-parked]').forEach(x => x.remove());
+  if (play) { exitPlayerPrompt(); return true; }
+  if ($('.ai-panel')) { closeAssistPanel(); return true; }
+  if (navStack.length > 1) {
+    navStack.pop(); const prev = navStack[navStack.length - 1]; navBusy = true; lastResult = null;
+    try { if (prev.fn) { db.activeTab = prev.tab; save(); markNav(prev.tab); $('#crumb').textContent = labels[prev.tab] || 'QUIZINOX'; prev.fn(); scrollTop(); } else setTab(prev.tab, true); } finally { navBusy = false; }
+    updateBackBtn(); return true;
+  }
+  if (lastResult || (db.activeTab || 'home') !== 'home') { setTab('home', true); navStack.length = 0; navStack.push({ tab: 'home', key: 'tab:home', fn: null }); updateBackBtn(); return true; }
+  return false;
+}
+const closeAssistPanel = () => { document.querySelector('.ai-panel')?.remove(); document.body.classList.remove('ai-open'); };
+function setTab(tab, fromBack = false) { if (play) return; if (!fromBack) navPush({ tab, key: 'tab:' + tab, fn: null }); db.activeTab = tab; save(); markNav(tab); $('#crumb').textContent = labels[tab] || 'QUIZINOX'; lastResult = null; render(); scrollTop(); updateBackBtn(); }
 $('[data-more]').addEventListener('click', () => { if (play) return toast('Finish or exit the quiz first'); actionSheet('More', '', [
   { icon: '＋', label: 'Create quiz', hint: 'Build or paste questions', run: () => setTab('create') },
   { icon: '✦', label: 'AI Studio', hint: 'Analyst · tutor · question generator', cls: 'practice-icon', run: () => setTab('ai') },
@@ -196,6 +223,7 @@ function quizMenu(id) {
     { icon: '⧉', label: 'Duplicate', run: () => { const c = structuredClone(q); c.id = uid(); c.title += ' (Copy)'; c.updatedAt = new Date().toISOString(); db.quizzes.unshift(c); save(); render(); toast('Quiz duplicated'); } },
     { icon: '⇩', label: 'Export', hint: 'JSON, TXT (😂 format) or PDF', run: () => exportQuiz(q) },
     { icon: '📝', label: 'Extract notes', hint: 'Study-notes HTML in Notes Generator format', run: () => extractNotes(q) },
+    { icon: '✦', label: 'Ask AI about this quiz', hint: 'Review, improve, study plan, explain weak questions', cls: 'practice-icon', run: () => openAssist({ tab: 'quizzes', ctx: `Quiz "${q.title}" (${q.subject || 'General'}), ${q.questions.length} questions. Sample questions: ${q.questions.slice(0, 8).map(x => x.text.slice(0, 140)).join(' | ')}. Past attempts: ${db.attempts.filter(a => a.quizId === q.id).slice(0, 5).map(a => a.percent + '%').join(', ') || 'none'}.` }) },
     { icon: '🌐', label: 'Translate · 100+ languages', hint: 'Online · bulk translation · no Gemini key', run: () => translateQuiz(q) },
     { icon: '×', label: 'Delete', danger: true, cls: 'danger-icon', run: async () => { if (await confirmBox('Delete quiz?', `"${q.title}" will be removed from this device.`, 'Delete', true)) { db.quizzes = db.quizzes.filter(x => x.id !== q.id); save(); render(); toast('Quiz deleted'); } } },
   ]);
@@ -218,6 +246,7 @@ function quizCard(q) { const best = db.attempts.filter(a => a.quizId === q.id).r
 
 /* ------------------------------ CREATOR ------------------------------ */
 function creator(editId = null) {
+  if (editId) navPush({ tab: 'create', key: 'create:' + editId, fn: () => creator(editId) });
   const old = editId ? db.quizzes.find(q => q.id === editId) : null; currentQuiz = old ? structuredClone(old) : (currentQuiz && !db.quizzes.some(q => q.id === currentQuiz.id) && currentQuiz.questions.length ? currentQuiz : quizTemplate());
   view.innerHTML = `<div class="page-title"><div><div class="eyebrow">QUIZ STUDIO</div><h1>${old ? 'Edit quiz' : 'Create a quiz'}</h1><p>Build your question set. Changes are saved only on this device.</p></div><button class="secondary" id="backLib">← Library</button></div>
  <div class="editor-layout"><div class="panel editor-main"><div class="form-grid"><label>Quiz title<input id="qTitle" value="${esc(currentQuiz.title)}" placeholder="e.g. Indian Polity — Fundamental Rights"/></label><label>Subject / category<input id="qSubject" value="${esc(currentQuiz.subject)}" placeholder="General Studies"/></label><label class="wide">Description<textarea id="qDesc" rows="2" placeholder="Short description...">${esc(currentQuiz.description)}</textarea></label></div><div class="divider"></div><div class="panel-head"><div><h3>Questions <span class="countbubble" id="questionCount">${currentQuiz.questions.length}</span></h3><p>Add MCQs with correct answers and explanations.</p></div><div class="title-actions row"><button class="secondary" id="pasteQs">⎘ Paste text</button><button class="primary" id="addQuestion">＋ Add question</button></div></div><div id="questionEditor">${currentQuiz.questions.map(questionEditor).join('')}</div><div class="empty-mini" id="noQuestions" ${currentQuiz.questions.length ? 'hidden' : ''}><span>✎</span><b>No questions added</b><small>Add a question, or paste many questions at once.</small></div></div>
@@ -343,9 +372,10 @@ function qView(quiz, q, code) {
   return { text: t.text || q.text, opt: orig => t.options?.[orig] ?? base.opt(orig), explanation: t.explanation || q.explanation };
 }
 const langShort = c => c === 'original' ? 'ORIGINAL' : (QUIZ_LANGS[c] || c).toUpperCase();
-function activeLangs(p) { const l = p.langs?.length ? p.langs : ['original']; return p.langMode === 'multi' ? l.slice(0, 3) : [l[0]]; }
+function activeLangs(p) { const l = p.langs?.length ? p.langs : ['original']; return p.langMode === 'multi' ? l.slice(0, MAX_LANGS) : [l[0]]; }
+const MAX_LANGS = 8;
 /** Plain snapshot (original option order) used by bookmarks, revision and the AI tutor. */
-function snapFromPlay(p, q) { return { text: q.text, options: q.options.slice().sort((a, b) => a.original - b.original).map(o => o.text), correct: q.correct, explanation: q.explanation || '', topic: q.topic || '', subject: q.subject || p.quiz.subject || 'General', quizId: p.quiz.isRevision ? (q.quizId || '') : p.quiz.id, quizTitle: p.quiz.isRevision ? (q.quizTitle || '') : p.quiz.title, qid: q.qid || q.id, selected: p.answers[p.index] ?? null }; }
+function snapFromPlay(p, q) { return { fig: q.fig, text: q.text, options: q.options.slice().sort((a, b) => a.original - b.original).map(o => o.text), correct: q.correct, explanation: q.explanation || '', topic: q.topic || '', subject: q.subject || p.quiz.subject || 'General', quizId: p.quiz.isRevision ? (q.quizId || '') : p.quiz.id, quizTitle: p.quiz.isRevision ? (q.quizTitle || '') : p.quiz.title, qid: q.qid || q.id, selected: p.answers[p.index] ?? null }; }
 function renderPlayer() {
   const p = play; if (!p) return; if (p.mode === 'omr') return renderOmr(); const q = p.questions[p.index]; if (!q) return finishQuiz();
   p.visited[p.index] = true; if (!p.qEnter) p.qEnter = Date.now();
@@ -355,8 +385,8 @@ function renderPlayer() {
   const done = answeredCount(p), total = p.questions.length, [lo, hi] = secRange(p), last = p.index === hi - 1, moreSec = !!p.sections && p.secTiming === 'section' && p.secIdx < p.sections.length - 1;
   const langs = activeLangs(p), multi = langs.length > 1, views = langs.map(c => ({ c, v: qView(p.quiz, q, c) }));
   const tag = c => multi ? `<span class="ml-tag">${esc(langShort(c))}</span>` : '';
-  const qHtml = multi ? views.map(({ c, v }) => `<div class="ml-block">${tag(c)}<div>${escMl(v.text)}</div></div>`).join('') : escMl(views[0].v.text);
-  const optHtml = o => `<span class="answer-text">${views.map(({ c, v }, k) => k ? `<small class="ml-sub"><em>${esc(langShort(c))}</em>${escMl(v.opt(o.original))}</small>` : escMl(v.opt(o.original))).join('')}</span>`;
+  const qHtml = (multi ? views.map(({ c, v }) => `<div class="ml-block">${tag(c)}<div>${escMl(v.text)}</div></div>`).join('') : escMl(views[0].v.text)) + figStem(q);
+  const optHtml = o => `${figOpt(q, o.original)}<span class="answer-text">${views.map(({ c, v }, k) => k ? `<small class="ml-sub"><em>${esc(langShort(c))}</em>${escMl(v.opt(o.original))}</small>` : escMl(v.opt(o.original))).join('')}</span>`;
   const rightIdx = q.options.findIndex(o => o.original === q.correct);
   const explHtml = views.map(({ c, v }) => `<p class="explanation-text">${tag(c)}${esc(explanationLines(v.explanation || 'No explanation was provided for this question.'))}</p>`).join('');
   const bm = isBookmarkedText(q.text);
@@ -442,7 +472,7 @@ async function submitQuiz() {
 function finishQuiz() {
   const p = play; if (!p) return; clearInterval(p.interval); clearInterval(p.clockIv); $$('.mode-overlay').forEach(o => o.remove()); tickTime(p); p.finished = true;
   let correct = 0, wrong = 0, blank = 0, score = 0; const neg = Number(p.quiz.settings.negative) || 0; const subject = p.quiz.subject || 'General';
-  const details = p.questions.map((q, i) => { const ans = p.answers[i]; let status = 'blank'; if (ans == null) blank++; else if (ans === q.correct) { correct++; score++; status = 'correct'; } else { wrong++; score -= neg; status = 'wrong'; } return { qid: q.qid || q.id, question: q.text, selected: ans ?? null, correct: q.correct, status, explanation: q.explanation, options: q.options, topic: q.topic || '', subject: q.subject || subject, timeSec: Math.round((p.qTime?.[i] || 0) / 1000), revKey: q.revKey || null, quizId: q.quizId || null }; });
+  const details = p.questions.map((q, i) => { const ans = p.answers[i]; let status = 'blank'; if (ans == null) blank++; else if (ans === q.correct) { correct++; score++; status = 'correct'; } else { wrong++; score -= neg; status = 'wrong'; } return { fig: q.fig, qid: q.qid || q.id, question: q.text, selected: ans ?? null, correct: q.correct, status, explanation: q.explanation, options: q.options, topic: q.topic || '', subject: q.subject || subject, timeSec: Math.round((p.qTime?.[i] || 0) / 1000), revKey: q.revKey || null, quizId: q.quizId || null }; });
   const max = p.questions.length, percent = Math.max(0, Math.round(score / max * 100));
   const attempt = { id: uid(), quizId: p.quiz.id, quizTitle: p.quiz.title, subject, mode: p.mode, date: new Date().toISOString(), durationSec: Math.round((Date.now() - p.started) / 1000), total: max, correct, wrong, blank, score: Number(score.toFixed(2)), percent, pass: p.quiz.settings.pass ?? 40, negative: neg, details };
   if (p.sections) attempt.sections = p.sections.map(sc => { const ds = details.slice(sc.start, sc.end), c = ds.filter(d => d.status === 'correct').length, w = ds.filter(d => d.status === 'wrong').length; return { name: sc.name, total: ds.length, correct: c, wrong: w, blank: ds.length - c - w, score: Number((c - w * neg).toFixed(2)), minutes: sc.minutes }; });
@@ -454,6 +484,7 @@ function finishQuiz() {
 }
 const fmtDur = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 60)}m ${s % 60}s`;
 function renderResult(a, filter = 'all') {
+  navPush({ tab: db.activeTab || 'home', key: 'result:' + a.id, fn: () => renderResult(a) }); setTimeout(updateBackBtn, 0);
   lastResult = a; scrollTop();
   const passed = a.percent >= (a.pass ?? 40);
   const idxOf = (d, orig) => d.options.findIndex(o => o.original === orig);
@@ -464,7 +495,7 @@ function renderResult(a, filter = 'all') {
   <div class="panel artifact-panel" ${a.isRevision ? 'hidden' : ''}><div class="panel-head"><div><h3>🌐 Language & study exports</h3><p>Choose a language, then download or share each generated file directly.</p></div></div><div class="form-grid"><label>Export language<select id="artifactLang"><option value="original">Original</option></select></label><label>Translate into<select id="artifactTarget"></select></label></div><div class="dialog-actions"><button class="secondary" id="artifactTranslate">🌐 Translate / prepare language</button></div><div class="artifact-grid"><div class="artifact-item"><b>🎮 Playable HTML Quiz</b><div><button class="primary" id="downloadQuizHtml">⬇ Download HTML</button><button class="secondary" id="shareQuizHtml">↗ Share</button></div></div><div class="artifact-item"><b>📄 Test PDF</b><div><button class="primary" id="downloadTestPdf">⬇ Download PDF</button><button class="secondary" id="shareTestPdf">↗ Share</button></div></div><div class="artifact-item"><b>✅ Solution PDF</b><div><button class="primary" id="downloadSolPdf">⬇ Download PDF</button><button class="secondary" id="shareSolPdf">↗ Share</button></div></div><div class="artifact-item"><b>📚 Test + Solution PDF</b><div><button class="primary" id="downloadMergedPdf">⬇ Download PDF</button><button class="secondary" id="shareMergedPdf">↗ Share</button></div></div><div class="artifact-item"><b>📝 Notes HTML</b><div><button class="primary" id="downloadNotesHtml">⬇ Download HTML</button><button class="secondary" id="shareNotesHtml">↗ Share</button></div></div><div class="artifact-item"><b>📘 Notes PDF</b><div><button class="primary" id="downloadNotesPdf">⬇ Download PDF</button><button class="secondary" id="shareNotesPdf">↗ Share</button></div></div></div><p class="muted" id="artifactStatus">Files are saved to Downloads on web, or shared through Android's share sheet.</p><div class="dialog-actions"><button class="secondary" id="openTestMaker">Open supplied Test Series Maker</button><button class="secondary" id="openNotesMaker">Open supplied Notes Maker</button><button class="secondary" id="openQuizMaker">Open supplied Quiz Maker</button><button class="secondary" id="openTranslatorTool">Open supplied Translator</button></div></div>
   <div class="panel"><div class="panel-head"><div><h3>Answer review</h3><p>Review every response and explanation.</p></div><button class="secondary" id="resultPdf">⇩ PDF report</button></div>
   <div class="chips">${[['all', 'All', a.total], ['correct', 'Correct', a.correct], ['wrong', 'Wrong', a.wrong], ['blank', 'Unanswered', a.blank]].map(([k, l, n]) => `<button class="chip ${filter === k ? 'active' : ''}" data-filter="${k}">${l} · ${n}</button>`).join('')}</div>
-  ${rows.length ? rows.map(({ d, i }) => `<div class="review-row"><div class="review-number">${i + 1}</div><div class="review-content"><b>${escMl(d.question)}</b><div class="review-status ${d.status}">${d.status.toUpperCase()} · ${d.selected == null ? 'Not answered' : `Your answer: ${L(idxOf(d, d.selected))}`} · Correct: ${L(idxOf(d, d.correct))}${d.timeSec ? ` · ⏱ ${d.timeSec}s` : ''}${d.topic ? ` · ${esc(d.topic)}` : ''}</div><div class="review-options">${d.options.map((o, j) => `<div class="${o.original === d.correct ? 'review-correct' : o.original === d.selected ? 'review-wrong' : ''}">${L(j)}. ${esc(o.text)} ${o.original === d.correct ? '✓' : o.original === d.selected ? '✕' : ''}</div>`).join('')}</div>${d.explanation ? `<p class="explanation-text">${esc(explanationLines(d.explanation))}</p>` : ''}<div class="review-actions"><button class="textbtn ${isBookmarkedText(d.question) ? 'bm-on' : ''}" data-rbm="${i}">${isBookmarkedText(d.question) ? '⚑ Saved as difficult' : '⚐ Save as difficult'}</button><button class="textbtn" data-rai="${i}">✦ Ask AI</button></div></div></div>`).join('') : '<div class="empty-mini"><b>Nothing here</b></div>'}</div>
+  ${rows.length ? rows.map(({ d, i }) => `<div class="review-row"><div class="review-number">${i + 1}</div><div class="review-content"><b>${escMl(d.question)}</b>${figStem(d)}<div class="review-status ${d.status}">${d.status.toUpperCase()} · ${d.selected == null ? 'Not answered' : `Your answer: ${L(idxOf(d, d.selected))}`} · Correct: ${L(idxOf(d, d.correct))}${d.timeSec ? ` · ⏱ ${d.timeSec}s` : ''}${d.topic ? ` · ${esc(d.topic)}` : ''}</div><div class="review-options">${d.options.map((o, j) => `<div class="${o.original === d.correct ? 'review-correct' : o.original === d.selected ? 'review-wrong' : ''}">${L(j)}. ${figOpt(d, o.original)}${esc(o.text)} ${o.original === d.correct ? '✓' : o.original === d.selected ? '✕' : ''}</div>`).join('')}</div>${d.explanation ? `<p class="explanation-text">${esc(explanationLines(d.explanation))}</p>` : ''}<div class="review-actions"><button class="textbtn ${isBookmarkedText(d.question) ? 'bm-on' : ''}" data-rbm="${i}">${isBookmarkedText(d.question) ? '⚑ Saved as difficult' : '⚐ Save as difficult'}</button><button class="textbtn" data-rai="${i}">✦ Ask AI</button></div></div></div>`).join('') : '<div class="empty-mini"><b>Nothing here</b></div>'}</div>
 <div class="result-actions"><button class="primary" id="resultHome">Back to dashboard</button>${a.isRevision ? '<button class="secondary" id="resultRevision">↻ Revision list</button>' : `<button class="secondary" id="resultAgain">↻ Retry quiz</button>`}</div>
 </div>`;
   if (!a.isRevision) setupResultArtifacts(a); $('#resultHome').onclick = () => setTab('home'); $('#resultAgain')?.addEventListener('click', () => chooseMode(a.quizId)); $('#resultRevision')?.addEventListener('click', () => setTab('revision')); $('#resultPdf').onclick = () => exportAttemptPDF(a);
@@ -601,14 +632,14 @@ function renderOmr() {
     return `<div class="omr-row ${used ? '' : 'unused'} ${locked ? 'locked' : ''}" data-r="${i}"><button class="omr-no" data-goq="${i}" ${used && !locked ? '' : 'disabled'}>${i + 1}</button>${Array.from({ length: maxOpt }, (_, o) => { const orig = used ? q.options[o]?.original : undefined; const on = used && orig != null && sel === orig; return `<button class="omr-b ${on ? 'on' : ''}" data-q="${i}" data-o="${o}" ${used && orig != null && !locked ? '' : 'disabled'} aria-label="Question ${i + 1} option ${L(o)}">${L(o)}</button>`; }).join('')}</div>`;
   };
   const cols = []; for (let s0 = 0; s0 < sheet; s0 += 20) cols.push(`<div class="omr-col">${Array.from({ length: Math.min(20, sheet - s0) }, (_, k) => row(s0 + k)).join('')}</div>`);
-  view.innerHTML = `<div class="omr-wrap omr-v-${p.omr.view || 'paper'}" id="omrWrap"><div class="player-top"><button class="secondary" id="quitPlay">← Exit</button><span class="tag">OMR MODE</span>${headBits(p)}<div class="player-top-actions"><button class="secondary omr-switch" id="omrSwitch">▦ OMR sheet</button>${moreSec ? '<button class="secondary" id="nextSection">Next section →</button>' : ''}<button class="primary" id="omrSubmit">Submit ✓</button></div></div>
+  view.innerHTML = `<div class="omr-wrap omr-v-${p.omr.view || (p.omr.view = (window.innerWidth <= 900 ? 'split' : 'paper'))}" id="omrWrap"><div class="player-top"><button class="secondary" id="quitPlay">← Exit</button><span class="tag">OMR MODE</span>${headBits(p)}<div class="player-top-actions"><button class="secondary omr-switch" id="omrSwitch">▦ OMR sheet</button>${moreSec ? '<button class="secondary" id="nextSection">Next section →</button>' : ''}<button class="primary" id="omrSubmit">Submit ✓</button></div></div>
    <div class="omr-grid"><section class="omr-paper panel" id="omrPaper"></section><section class="omr-sheet panel"><div class="omr-sheet-head"><b>OMR ANSWER SHEET</b><span id="omrCount"></span></div><div class="omr-note">Fill ONE bubble per question · tap a filled bubble again to erase it · tap a question number to open it</div><div class="omr-cols" id="omrCols">${cols.join('')}</div></section></div></div>`;
   const count = () => { const c = $('#omrCount'); if (c) c.textContent = `${answeredCount(p)} / ${total} filled`; };
   const paper = () => {
     const per = 5, pages = Math.max(1, Math.ceil((hi - lo) / per)); p.omr.page = Math.max(0, Math.min(p.omr.page || 0, pages - 1));
     const s0 = lo + p.omr.page * per, e0 = Math.min(hi, s0 + per), lang = activeLangs(p)[0];
     $('#omrPaper').innerHTML = `<div class="omr-paper-nav"><button class="secondary" id="opPrev" ${p.omr.page === 0 ? 'disabled' : ''}>‹ Prev</button><span>Questions <b>${s0 + 1}–${e0}</b> of ${total}${p.sections ? ` · page ${p.omr.page + 1}/${pages}` : ''}</span><button class="secondary" id="opNext" ${p.omr.page >= pages - 1 ? 'disabled' : ''}>Next ›</button></div>` +
-      p.questions.slice(s0, e0).map((q, k) => { const i = s0 + k, v = qView(p.quiz, q, lang); return `<div class="omr-q" id="oq-${i}"><div class="omr-qt"><b>Q${i + 1}.</b> ${escMl(v.text)}</div><div class="omr-opts">${q.options.map((o, j) => `<div><b>(${L(j)})</b> ${escMl(v.opt(o.original))}</div>`).join('')}</div></div>`; }).join('') +
+      p.questions.slice(s0, e0).map((q, k) => { const i = s0 + k, v = qView(p.quiz, q, lang); return `<div class="omr-q" id="oq-${i}"><div class="omr-qt"><b>Q${i + 1}.</b> ${escMl(v.text)}</div>${figStem(q)}<div class="omr-opts ${hasOptFigs(q.fig) ? 'fig-grid' : ''}">${q.options.map((o, j) => `<div><b>(${L(j)})</b> ${figOpt(q, o.original)}${hasOptFigs(q.fig) ? '' : escMl(v.opt(o.original))}</div>`).join('')}</div></div>`; }).join('') +
       `<div class="omr-paper-nav"><button class="secondary" id="opPrev2" ${p.omr.page === 0 ? 'disabled' : ''}>‹ Prev</button><span class="muted">Mark answers on the OMR sheet</span><button class="secondary" id="opNext2" ${p.omr.page >= pages - 1 ? 'disabled' : ''}>Next ›</button></div>`;
     const turn = d => { p.omr.page += d; paper(); $('#omrPaper').scrollTop = 0; scrollTop(); };
     ['opPrev', 'opPrev2'].forEach(id => $('#' + id).onclick = () => turn(-1)); ['opNext', 'opNext2'].forEach(id => $('#' + id).onclick = () => turn(1));
@@ -617,8 +648,12 @@ function renderOmr() {
   $('#quitPlay').onclick = () => exitPlayerPrompt();
   $('#omrSubmit').onclick = submitQuiz;
   $('#nextSection')?.addEventListener('click', async () => { if (await confirmBox('Move to the next section?', 'You will not be able to return to this section.', 'Next section')) advanceSection(false); });
-  $('#omrSwitch').onclick = () => { const w = $('#omrWrap'); const toSheet = !w.classList.contains('omr-v-sheet'); w.classList.toggle('omr-v-sheet', toSheet); w.classList.toggle('omr-v-paper', !toSheet); p.omr.view = toSheet ? 'sheet' : 'paper'; $('#omrSwitch').textContent = toSheet ? '☰ Question paper' : '▦ OMR sheet'; scrollTop(); };
-  if (p.omr.view === 'sheet') $('#omrSwitch').textContent = '☰ Question paper';
+  const VIEWS = ['split', 'paper', 'sheet'], NEXT = { split: '☰ Paper only', paper: '▦ OMR only', sheet: '◫ Split view' };
+  const fitOmr = () => { const g = $('.omr-grid'); if (!g || !$('#omrWrap')) return; window.scrollTo(0, 0); g.style.height = '300px'; const r = g.getBoundingClientRect(), w = $('#omrWrap').getBoundingClientRect(); const below = Math.max(0, w.bottom - r.bottom); g.style.height = Math.max(300, window.innerHeight - r.top - below - 22) + 'px'; const extra = document.documentElement.scrollHeight - window.innerHeight; if (extra > 0) g.style.height = Math.max(300, g.getBoundingClientRect().height - extra - 2) + 'px'; };
+  window.onresize = () => { if (play?.mode === 'omr') fitOmr(); };
+  const setView = v => { p.omr.view = v; setTimeout(fitOmr, 0); const w = $('#omrWrap'); VIEWS.forEach(x => w.classList.toggle('omr-v-' + x, x === v)); $('#omrSwitch').textContent = NEXT[v]; };
+  $('#omrSwitch').onclick = () => { p.omr.vset = 1; setView(VIEWS[(VIEWS.indexOf(p.omr.view) + 1) % 3]); scrollTop(); };
+  setView(!p.omr.vset && window.innerWidth <= 900 ? 'split' : VIEWS.includes(p.omr.view) ? p.omr.view : 'paper');
   $('#omrCols').addEventListener('click', e => {
     const b = e.target.closest('.omr-b');
     if (b && !b.disabled) {
@@ -629,7 +664,7 @@ function renderOmr() {
       count(); clearTimeout(omrSaveT); omrSaveT = setTimeout(savePlay, 600); return;
     }
     const n = e.target.closest('.omr-no');
-    if (n && !n.disabled) { const qi = Number(n.dataset.goq); p.omr.page = Math.floor((qi - lo) / 5); p.omr.view = 'paper'; const w = $('#omrWrap'); w.classList.add('omr-v-paper'); w.classList.remove('omr-v-sheet'); $('#omrSwitch').textContent = '▦ OMR sheet'; paper(); $('#oq-' + qi)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+    if (n && !n.disabled) { const qi = Number(n.dataset.goq); p.omr.page = Math.floor((qi - lo) / 5); if (p.omr.view === 'sheet') setView(window.innerWidth <= 900 ? 'split' : 'paper'); paper(); $('#oq-' + qi)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   });
 }
 
@@ -835,14 +870,24 @@ function exportQuiz(q) {
   ]);
 }
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9\u0900-\u097f]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'quiz'; }
-function backup() { saveFile(`quizinox-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: 'QUIZINOX', version: 2, exportedAt: new Date().toISOString(), data: { ...db, settings: { ...db.settings, geminiKey: '', aiKeys: [] } } }, null, 2), 'application/json').then(r => toast(`Backup saved (${r.where}) ✓`)); }
+function backup() {
+  actionSheet('Export backup', 'Includes quizzes, attempts, notes, UPSC data, AI history and all settings. Choose what to do with AI API keys.', [
+    { icon: '⇩', label: 'Full backup — with AI keys & AI settings', hint: 'Keys are saved as plain text inside the file — keep the file private', cls: 'practice-icon', run: () => doBackup(true) },
+    { icon: '⇩', label: 'Backup without API keys', hint: 'AI model / provider preferences are kept; add the keys again after restoring', run: () => doBackup(false) },
+  ]);
+}
+function doBackup(withKeys) {
+  const settings = withKeys ? { ...db.settings } : { ...db.settings, geminiKey: '', aiKeys: [] };
+  const aux = {}; if (withKeys) { try { aux.aiUsage = JSON.parse(Store.getItem('quizinox_ai_usage_v2') || '{}'); } catch { /* */ } }
+  saveFile(`quizinox-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: 'QUIZINOX', version: 3, exportedAt: new Date().toISOString(), withAiKeys: !!withKeys, aux, data: { ...db, settings } }, null, 2), 'application/json').then(r => toast(`Backup saved (${r.where})${withKeys ? ' · includes AI keys' : ''} ✓`));
+}
 async function restoreBackup(file) {
   try {
     const b = JSON.parse(await file.text()); const d = b.data || b;
     if (!Array.isArray(d.quizzes) || !Array.isArray(d.attempts)) throw Error('Not a QUIZINOX backup file');
     actionSheet('Restore backup', `${d.quizzes.length} quizzes · ${d.attempts.length} attempts`, [
-      { icon: '⊕', label: 'Merge with current data', hint: 'Keeps your current quizzes, adds missing ones', cls: 'practice-icon', run: () => { const qIds = new Set(db.quizzes.map(q => q.id)), aIds = new Set(db.attempts.map(a => a.id)); db.quizzes.push(...d.quizzes.filter(q => !qIds.has(q.id))); db.attempts.push(...d.attempts.filter(a => !aIds.has(a.id))); db.revision = { ...(d.revision || {}), ...db.revision }; db.bookmarks = { ...(d.bookmarks || {}), ...db.bookmarks }; if (d.upsc) db.upsc = mergeUpsc(db.upsc, d.upsc); db.attempts.sort((x, y) => String(y.date).localeCompare(String(x.date))); save(); setTab('home'); toast('Backup merged ✓'); } },
-      { icon: '↺', label: 'Replace everything', hint: 'Current data on this device is replaced', danger: true, cls: 'danger-icon', run: () => { const keys = db.settings.aiKeys || []; db = normalizeState({ ...d, settings: { ...(d.settings || {}), geminiKey: '', aiKeys: keys } }); save(); $('#profileName').textContent = db.settings.name || 'Learner'; setTab('home'); toast('Backup restored ✓'); } },
+      { icon: '⊕', label: 'Merge with current data', hint: 'Keeps your current quizzes, adds missing ones', cls: 'practice-icon', run: () => { const qIds = new Set(db.quizzes.map(q => q.id)), aIds = new Set(db.attempts.map(a => a.id)); db.quizzes.push(...d.quizzes.filter(q => !qIds.has(q.id))); db.attempts.push(...d.attempts.filter(a => !aIds.has(a.id))); db.revision = { ...(d.revision || {}), ...db.revision }; db.bookmarks = { ...(d.bookmarks || {}), ...db.bookmarks }; if (d.upsc) db.upsc = mergeUpsc(db.upsc, d.upsc); for (const [k, v] of Object.entries(d.settings || {})) { const c = db.settings[k]; if (c == null || c === '' || (Array.isArray(c) && !c.length)) db.settings[k] = v; else if (k === 'aiKeys' && Array.isArray(v)) { const have = new Set(c.map(x => x.key)); v.forEach(x => { if (x && !have.has(x.key)) c.push(x); }); } } if (d.aiChats) { const a = db.aiChats || (db.aiChats = {}); const mg = (x, y) => { const m = new Map((x || []).map(i => [i.id, i])); (y || []).forEach(i => { if (i && !m.has(i.id)) m.set(i.id, i); }); return [...m.values()]; }; a.convs = mg(a.convs, d.aiChats.convs); a.log = mg(a.log, d.aiChats.log); a.saved = mg(a.saved, d.aiChats.saved); a.prefs = { ...(d.aiChats.prefs || {}), ...(a.prefs || {}) }; } db.attempts.sort((x, y) => String(y.date).localeCompare(String(x.date))); save(); setTab('home'); toast('Backup merged ✓'); } },
+      { icon: '↺', label: 'Replace everything', hint: 'Current data on this device is replaced', danger: true, cls: 'danger-icon', run: () => { const keys = db.settings.aiKeys || []; const keep = Array.isArray(d.settings?.aiKeys) && d.settings.aiKeys.length ? d.settings.aiKeys : keys; db = normalizeState({ ...d, settings: { ...(d.settings || {}), geminiKey: '', aiKeys: keep } }); if (b.aux?.aiUsage) { try { Store.setItem('quizinox_ai_usage_v2', JSON.stringify(b.aux.aiUsage)); } catch { /* */ } } save(); $('#profileName').textContent = db.settings.name || 'Learner'; setTab('home'); toast('Backup restored ✓'); } },
     ]);
   } catch (e) { toast('Backup invalid: ' + e.message); }
 }
@@ -910,7 +955,10 @@ const GEN_TYPES = {
   mapfact: { label: 'Geography / location', rule: 'Location-based: ask where a place, river, mountain, port, park, dam, city or site lies (state, country, neighbouring feature). Describe the location in words — no image needed.' },
   caseS: { label: 'Case study / scenario', rule: 'Short scenario (2–4 lines: an administrative, ethical, legal or everyday situation) followed by a question asking for the best course of action or the correct principle. One best answer.' },
 };
-const GEN_TYPE_GROUPS = [['Core', ['mcq', 'statement', 'multi', 'howmany', 'pairs', 'match', 'chrono']], ['Assertion & logic', ['ar', 'twostmt', 'incorrect', 'except', 'odd', 'reasoning', 'analogy']], ['Simple formats', ['tf', 'fill', 'assertion2', 'vocab']], ['Applied', ['passage', 'numeric', 'current', 'mapfact', 'caseS']]];
+Object.assign(GEN_TYPES, VERBAL_TYPES);
+NV_ALL.forEach(k => { GEN_TYPES[k] = { label: '🧩 ' + NV_KINDS[k][0], rule: 'Built locally by the app (no AI).', local: true }; });
+const GEN_TYPE_GROUPS_BASE = [['Core', ['mcq', 'statement', 'multi', 'howmany', 'pairs', 'match', 'chrono']], ['Assertion & logic', ['ar', 'twostmt', 'incorrect', 'except', 'odd', 'reasoning', 'analogy']], ['Simple formats', ['tf', 'fill', 'assertion2', 'vocab']], ['Applied', ['passage', 'numeric', 'current', 'mapfact', 'caseS']]];
+const GEN_TYPE_GROUPS = [...GEN_TYPE_GROUPS_BASE, ['Reasoning · verbal (AI)', Object.keys(VERBAL_TYPES)], ['Reasoning · non-verbal figures (built by the app, no AI needed)', NV_ALL]];
 const GEN_EXAMS = [['UPSC & civil services', ['UPSC Civil Services Prelims', 'UPSC CSE Mains (analytical MCQ)', 'UPSC CAPF / CDS / NDA', 'UPSC ESE / Engineering Services', 'State PSC', 'RPSC RAS / RTS (Rajasthan)', 'UPPSC / UPPCS', 'BPSC', 'MPPSC', 'HPSC / HCS', 'GPSC', 'MPSC', 'TNPSC', 'KPSC', 'WBCS', 'OPSC']], ['SSC, banking, railways', ['SSC / Banking / Railways', 'SSC CGL', 'SSC CHSL', 'SSC MTS / GD', 'SSC CPO / Delhi Police', 'IBPS PO / Clerk', 'SBI PO / Clerk', 'RBI Grade B / Assistant', 'NABARD / SEBI', 'RRB NTPC', 'RRB Group D / ALP', 'Insurance (LIC / NIACL)']], ['Entrance & academics', ['JEE Main / Advanced', 'NEET UG', 'CUET', 'CAT / MBA entrance', 'GATE', 'CLAT / Law entrance', 'UGC NET / SET', 'CTET / TET / REET', 'NDA / CDS / AFCAT', 'Class 10 board', 'Class 12 board', 'NCERT basics']], ['Other', ['Rajasthan Police / Patwari / VDO', 'State Police Constable / SI', 'Teaching exams (KVS / NVS)', 'General knowledge', 'Current affairs', 'Computer / IT awareness']]];
 function aiItemsToQuestions(obj, fallbackType = 'mcq') {
   const arr = Array.isArray(obj) ? obj : (obj?.questions || []);
@@ -931,7 +979,6 @@ function splitChunks(text, size = 12000) {
   return out;
 }
 function aiGenerator(preset = {}) {
-  if (!AI.aiReady()) { toast('Add an AI key (or sign in) in Settings first'); setTab('settings'); return; }
   let sourceText = preset.sourceText || ''; let source = preset.source || 'topic'; let cancel = null; let generated = [];
   const types = new Set(preset.types || ['mcq', 'statement']);
   const weak = buildProfile().topics.filter(t => t.total >= 2).slice(0, 5).map(t => t.key);
@@ -944,11 +991,11 @@ function aiGenerator(preset = {}) {
    <div class="gen-label-row"><div class="eyebrow gen-label">QUESTION TYPES <span id="typeCount" class="muted"></span></div><div class="gen-label-btns"><button class="textbtn" id="typesAll">Select all</button><button class="textbtn" id="typesNone">Clear</button><button class="textbtn" id="typesUpsc">UPSC set</button></div></div>
    ${GEN_TYPE_GROUPS.map(([g, ks]) => `<div class="type-group"><small>${g}</small><div class="type-chips">${ks.map(k => `<button class="chip ${types.has(k) ? 'active' : ''}" data-type="${k}">${GEN_TYPES[k].label}</button>`).join('')}</div></div>`).join('')}
    <div class="form-grid three"><label>Questions<select id="aiCount">${[5, 10, 15, 20, 25, 30, 40, 50].map(n => `<option ${n === (preset.count || 10) ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>Difficulty<select id="aiDiff"><option>Mixed</option><option>Easy</option><option>Moderate</option><option selected>Hard (UPSC Prelims level)</option><option>Very hard (UPSC toppers)</option></select></label><label>Exam style<select id="aiExam">${GEN_EXAMS.map(([g, list]) => `<optgroup label="${g}">${list.map(x => `<option>${x}</option>`).join('')}</optgroup>`).join('')}<option value="__custom">✎ Other exam (type below)…</option></select></label><label id="examCustomBox" hidden>Your exam name<input id="aiExamCustom" placeholder="e.g. Rajasthan Patwari, RAS Mains, BPSC TRE"/></label>
-   <label>Language<select id="aiLang"><option>English</option><option>Hindi</option><option>Bilingual (English + Hindi)</option></select></label><label>Explanations<select id="aiExpl"><option value="detailed">Detailed (why right + why others wrong)</option><option value="short">Short (1–3 lines)</option></select></label><label>Save to<select id="aiTarget"><option value="new">New quiz</option>${db.quizzes.slice(0, 40).map(q => `<option value="${q.id}">Add to: ${esc(q.title.slice(0, 40))}</option>`).join('')}</select></label></div>
+   <label>Language<select id="aiLang"><option>English</option><option>Hindi</option><option>Bilingual (English + Hindi)</option></select></label><label>Explanation style<select id="aiExpl">${Object.entries(EXPL_TYPES).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></label><label>Save to<select id="aiTarget"><option value="new">New quiz</option>${db.quizzes.slice(0, 40).map(q => `<option value="${q.id}">Add to: ${esc(q.title.slice(0, 40))}</option>`).join('')}</select></label></div>
    <div class="notice compact" id="aiBudget"></div>
    <div class="progress small" id="genProg" hidden><i style="width:0%"></i></div><div class="muted" id="aiStatus"></div><div id="genPreview"></div>
    <div class="dialog-actions"><button class="secondary" id="aiCancel" hidden>Stop</button><button class="primary" id="aiGo">✦ Generate</button></div>`, { wide: true });
-  const budget = () => { const n = Number($('#aiCount', el).value); const per = $('#aiExpl', el).value === 'detailed' ? 6 : 10; const req = Math.ceil(n / per); const pp = AI.primaryProvider(), m = AI.selectedModel(pp); const ready = AI.getKeys().filter(k => k.enabled !== false && k.status !== 'invalid').length; $('#aiBudget', el).innerHTML = `Uses about <b>${req} AI request${req > 1 ? 's' : ''}</b> (${per} questions per request). Main AI: <b>${esc(AI.providerName(pp))}</b> · ${esc(AI.modelLabel(pp, m) || 'default model')} — free quota left today: ~<b>${AI.remainingLabel(m, pp)}</b> across ${ready} key(s). If it fails, the next AI takes over automatically.`; };
+  const budget = () => { const n = Number($('#aiCount', el).value); const per = explPer($('#aiExpl', el).value); const nAi = [...types].every(t => GEN_TYPES[t].local) ? 0 : n; const req = Math.ceil(nAi / per); const pp = AI.primaryProvider(), m = AI.selectedModel(pp); const ready = AI.getKeys().filter(k => k.enabled !== false && k.status !== 'invalid').length; $('#aiBudget', el).innerHTML = `Uses about <b>${req} AI request${req > 1 ? 's' : ''}</b> (${per} questions per request). Main AI: <b>${esc(AI.providerName(pp))}</b> · ${esc(AI.modelLabel(pp, m) || 'default model')} — free quota left today: ~<b>${AI.remainingLabel(m, pp)}</b> across ${ready} key(s). If it fails, the next AI takes over automatically.`; };
   const setSource = k => { source = k; $$('#genSource button', el).forEach(b => b.classList.toggle('active', b.dataset.src === k)); $('#genFileBox', el).hidden = k !== 'file'; $('#genPasteBox', el).hidden = k !== 'paste'; if (k === 'weak') { if (!weak.length) { toast('Complete a few quizzes first so weak topics can be found'); } else $('#aiTopic', el).value = 'My weak topics: ' + weak.join('; '); } };
   $$('#genSource button', el).forEach(b => b.onclick = () => setSource(b.dataset.src)); setSource(source);
   const examName = () => { const v = $('#aiExam', el).value; return v === '__custom' ? ($('#aiExamCustom', el).value.trim() || 'General competitive exam') : v; };
@@ -964,7 +1011,7 @@ function aiGenerator(preset = {}) {
   $('#aiCancel', el).onclick = () => cancel?.abort();
   const prog = (pct, msg) => { const p = $('#genProg', el); p.hidden = false; $('i', p).style.width = pct + '%'; if (msg != null) $('#aiStatus', el).textContent = msg; };
   const showPreview = () => {
-    $('#genPreview', el).innerHTML = generated.length ? `<div class="gen-preview"><div class="panel-head"><div><h3>${generated.length} questions ready</h3><p>Untick any you don't want, then save.</p></div><span class="gen-sel"><button class="textbtn" id="genSelAll">Select all</button><button class="textbtn" id="genSelNone">Deselect all</button></span></div>${generated.map((q, i) => `<label class="gen-item"><input type="checkbox" data-keep="${i}" checked/><span><em class="tag">${esc(GEN_TYPES[q.qtype]?.label || q.qtype)}</em> ${escMl(q.text.slice(0, 400))}<small>✓ ${esc(q.options[q.correct] || '')}${q.topic ? ` · ${esc(q.topic)}` : ''}</small></span></label>`).join('')}<div class="dialog-actions"><input id="genTitle" placeholder="Quiz title" value="${esc(($('#aiTopic', el).value.trim() || 'Notes').slice(0, 70) + ' — AI Quiz')}"/><button class="primary" id="genSave">＋ Save selected</button></div></div>` : '';
+    $('#genPreview', el).innerHTML = generated.length ? `<div class="gen-preview"><div class="panel-head"><div><h3>${generated.length} questions ready</h3><p>Untick any you don't want, then save.</p></div><span class="gen-sel"><button class="textbtn" id="genSelAll">Select all</button><button class="textbtn" id="genSelNone">Deselect all</button></span></div>${generated.map((q, i) => `<label class="gen-item"><input type="checkbox" data-keep="${i}" checked/><span><em class="tag">${esc(GEN_TYPES[q.qtype]?.label || q.qtype)}</em> ${escMl(q.text.slice(0, 400))}${q.fig ? `<div class="fig-stem">${renderStem(q.fig)}</div>` : ''}<small>✓ ${esc(q.options[q.correct] || '')}${q.topic ? ` · ${esc(q.topic)}` : ''}</small></span></label>`).join('')}<div class="dialog-actions"><input id="genTitle" placeholder="Quiz title" value="${esc(($('#aiTopic', el).value.trim() || 'Notes').slice(0, 70) + ' — AI Quiz')}"/><button class="primary" id="genSave">＋ Save selected</button></div></div>` : '';
     $('#genSelAll', el)?.addEventListener('click', () => $$('[data-keep]', el).forEach(b => b.checked = true));
     $('#genSelNone', el)?.addEventListener('click', () => $$('[data-keep]', el).forEach(b => b.checked = false));
     $('#genSave', el)?.addEventListener('click', () => {
@@ -979,16 +1026,19 @@ function aiGenerator(preset = {}) {
     let src = source === 'file' ? sourceText : source === 'paste' ? $('#aiPaste', el).value.trim() : '';
     if (source === 'file' && !src) return toast('Choose a notes / PDF file first');
     if (source === 'paste' && src.length < 80) return toast('Paste some notes (at least a few lines)');
-    if (!topic && !src) return toast('Enter a topic');
+    if (!topic && !src && ![...types].every(t => GEN_TYPES[t].local)) return toast('Enter a topic');
     const count = Number($('#aiCount', el).value), lang = $('#aiLang', el).value, diff = $('#aiDiff', el).value, exam = examName(), detail = $('#aiExpl', el).value;
-    const per = detail === 'detailed' ? 6 : 10, batches = Math.ceil(count / per), chunks = splitChunks(src);
+    const per = explPer(detail), chunks = splitChunks(src);
     const typeList = [...types]; const plan = Array.from({ length: count }, (_, i) => typeList[i % typeList.length]);
+    const aiPlan = plan.filter(t => !GEN_TYPES[t].local), nvPlan = plan.filter(t => GEN_TYPES[t].local), batches = Math.ceil(aiPlan.length / per);
+    if (aiPlan.length && !AI.aiReady()) { toast('This needs AI — add a key (or sign in) in Settings. Figure (non-verbal) questions need no AI: select only those.'); return; }
     const langRule = lang === 'Hindi' ? 'Write everything (questions, options, explanations, topic) in Hindi (Devanagari script).' : lang.startsWith('Bilingual') ? 'Bilingual: write every question, option and explanation in English, then a new line (\\n) with the Hindi (Devanagari) translation of the same text.' : 'Write everything in clear English.';
     const btn = $('#aiGo', el); btn.disabled = true; btn.textContent = 'Generating…'; $('#aiCancel', el).hidden = false; cancel = new AbortController(); generated = []; showPreview();
+    if (nvPlan.length) { generated.push(...generateNonVerbal([...new Set(nvPlan)], nvPlan.length, detail, Date.now())); showPreview(); }
     const seen = new Set();
     try {
       for (let b = 0; b < batches; b++) {
-        const slice = plan.slice(b * per, b * per + per); const n = slice.length; if (!n) break;
+        const slice = aiPlan.slice(b * per, b * per + per); const n = slice.length; if (!n) break;
         const mix = Object.entries(slice.reduce((m, t) => (m[t] = (m[t] || 0) + 1, m), {}));
         const chunk = chunks.length ? chunks[Math.min(chunks.length - 1, Math.floor(b * chunks.length / batches))] : '';
         const avoid = generated.slice(-20).map(q => q.text.replace(/\s+/g, ' ').slice(0, 90));
@@ -999,7 +1049,8 @@ Rules for each type:
 ${mix.map(([t]) => `- ${GEN_TYPES[t].label}: ${GEN_TYPES[t].rule}`).join('\n')}
 General rules:
 - Exactly 4 options (only True/False questions use 2 options) and exactly one correct option. "correct" is the zero-based index (0–3). Vary the position of the correct option.
-- Explanation: ${detail === 'detailed' ? '4–6 sentences explaining why the correct option is right AND why each other option is wrong, plus one related fact worth remembering.' : '1–3 crisp sentences.'}
+- Explanation style ("explanation" field): ${explRule(detail)}
+- For any reasoning-type question: solve it yourself first, make sure EXACTLY one option is correct, and never rely on a picture (describe everything in words).
 - "topic": short sub-topic (2–5 words). "type": one of ${mix.map(([t]) => `"${t}"`).join(', ')}.
 - Facts must be accurate and unambiguous. Avoid "All of the above"/"None of the above" unless the type requires it.
 ${chunk ? `Base every question ONLY on the source material between the <source> tags:\n<source>\n${chunk}\n</source>\n` : ''}${avoid.length ? `Do not repeat or closely copy these existing questions:\n- ${avoid.join('\n- ')}\n` : ''}Return ONLY JSON: {"questions":[{"type":"${mix[0][0]}","question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","topic":"...","difficulty":"moderate"}]}`;
@@ -1014,7 +1065,7 @@ ${chunk ? `Base every question ONLY on the source material between the <source> 
         for (const q of got) { const k = normQ(q.text).slice(0, 120); if (seen.has(k)) continue; seen.add(k); generated.push(q); }
         showPreview();
       }
-      prog(100, `Done ✓ ${generated.length} questions generated.`);
+      prog(100, `Done ✓ ${generated.length} questions generated${nvPlan.length ? ` (${nvPlan.length} figure questions built by the app)` : ''}.`);
     } catch (e) {
       prog(100, ''); $('#aiStatus', el).innerHTML = `<span class="${e.code === 'abort' ? 'amber-text' : 'red-text'}">${e.code === 'abort' ? '■ Stopped.' : '✕ ' + esc(e.message)}</span>${generated.length ? ` <span class="muted">${generated.length} questions made before this — you can still save them.</span>` : ''}`;
     } finally { btn.disabled = false; btn.textContent = generated.length ? '✦ Generate again' : '✦ Generate'; $('#aiCancel', el).hidden = true; cancel = null; budget(); }
@@ -1022,33 +1073,54 @@ ${chunk ? `Base every question ONLY on the source material between the <source> 
 }
 const QUIZ_LANGS = Object.fromEntries(`hi:Hindi|bn:Bengali|te:Telugu|mr:Marathi|ta:Tamil|gu:Gujarati|ur:Urdu|kn:Kannada|ml:Malayalam|pa:Punjabi|or:Odia|as:Assamese|ne:Nepali|sa:Sanskrit|sd:Sindhi|gom:Konkani|mai:Maithili|doi:Dogri|bho:Bhojpuri|mni-Mtei:Manipuri|si:Sinhala|af:Afrikaans|sq:Albanian|am:Amharic|ar:Arabic|hy:Armenian|ay:Aymara|az:Azerbaijani|bm:Bambara|eu:Basque|be:Belarusian|bs:Bosnian|bg:Bulgarian|ca:Catalan|ceb:Cebuano|ny:Chichewa|zh-CN:Chinese Simplified|zh-TW:Chinese Traditional|co:Corsican|hr:Croatian|cs:Czech|da:Danish|dv:Dhivehi|nl:Dutch|en:English|eo:Esperanto|et:Estonian|tl:Filipino|fi:Finnish|fr:French|fy:Frisian|gl:Galician|ka:Georgian|de:German|el:Greek|gn:Guarani|ht:Haitian Creole|ha:Hausa|haw:Hawaiian|iw:Hebrew|hmn:Hmong|hu:Hungarian|is:Icelandic|ig:Igbo|ilo:Ilocano|id:Indonesian|ga:Irish|it:Italian|ja:Japanese|jw:Javanese|kk:Kazakh|km:Khmer|rw:Kinyarwanda|ko:Korean|ku:Kurdish|ky:Kyrgyz|lo:Lao|la:Latin|lv:Latvian|ln:Lingala|lt:Lithuanian|lg:Luganda|lb:Luxembourgish|mk:Macedonian|mg:Malagasy|ms:Malay|mt:Maltese|mi:Maori|mn:Mongolian|my:Myanmar|no:Norwegian|om:Oromo|ps:Pashto|fa:Persian|pl:Polish|pt:Portuguese|qu:Quechua|ro:Romanian|ru:Russian|sm:Samoan|gd:Scots Gaelic|sr:Serbian|st:Sesotho|sn:Shona|sk:Slovak|sl:Slovenian|so:Somali|es:Spanish|su:Sundanese|sw:Swahili|sv:Swedish|tg:Tajik|tt:Tatar|th:Thai|ti:Tigrinya|tr:Turkish|tk:Turkmen|ak:Twi|uk:Ukrainian|ug:Uyghur|uz:Uzbek|vi:Vietnamese|cy:Welsh|xh:Xhosa|yi:Yiddish|yo:Yoruba|zu:Zulu`.split('|').map(x=>{const i=x.indexOf(':');return [x.slice(0,i),x.slice(i+1)]}));
 const languageLabel = c => QUIZ_LANGS[c] || c;
-const TSEP='ZXQLINESEPZX', tCache=new Map();
-async function translateBatch(texts,tl,sl='auto'){
-  if(!navigator.onLine)throw Error('Internet connection required.');
-  const out=new Array(texts.length), ids=[]; texts.forEach((x,i)=>{if(String(x||'').trim())ids.push(i);else out[i]=x;});
-  const batches=[];let b=[],n=0;for(const i of ids){const z=String(texts[i]).length+TSEP.length+4;if(b.length&&n+z>3000){batches.push(b);b=[];n=0;}b.push(i);n+=z;}if(b.length)batches.push(b);
-  async function one(input,ep){const url=ep===1?`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}&dt=t`:`https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}`;const c=new AbortController(),tm=setTimeout(()=>c.abort(),25000);try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:'q='+encodeURIComponent(input),signal:c.signal});if(!r.ok)throw Error('Translation service HTTP '+r.status);const d=await r.json();if(ep===1&&Array.isArray(d?.[0]))return d[0].map(x=>x?.[0]||'').join('');const x=Array.isArray(d)?d[0]:null;if(Array.isArray(x))return String(x[0]||'');if(typeof x==='string')return x;if(d?.sentences)return d.sentences.map(x=>x.trans||'').join('');throw Error('Unexpected translation response');}finally{clearTimeout(tm);}}
-  async function run(g,depth=0){const input=g.map(i=>texts[i]).join('\n'+TSEP+'\n'),key=sl+'|'+tl+'|'+input;try{let val=tCache.get(key);if(!val){let err;for(let k=0;k<4;k++){try{val=await one(input,k%2?2:1);tCache.set(key,val);break;}catch(e){err=e;await new Promise(r=>setTimeout(r,400*(k+1)));}}if(val==null)throw err||Error('Translation failed');}const parts=val.split(new RegExp(`\\s*${TSEP}\\s*`,'i'));if(parts.length!==g.length&&g.length>1)throw Error('Batch formatting changed');g.forEach((i,j)=>out[i]=parts[j]||texts[i]);}catch(e){if(g.length>1&&depth<3){const m=Math.ceil(g.length/2);await Promise.all([run(g.slice(0,m),depth+1),run(g.slice(m),depth+1)]);}else throw e;}}
-  let nextBatch=0;await Promise.all(Array.from({length:Math.min(6,batches.length)},async()=>{while(nextBatch<batches.length){const i=nextBatch++;await run(batches[i]);}}));return out;
+const tCache = new Map();
+async function translateBatch(texts, tl, sl = 'auto', opts = {}) { return translateTexts(texts, tl, { sl, ...opts }); }
+/** Translates questions in groups of 8, calling onGroup after each so finished work can be saved and resumed. */
+async function translateQuestionSet(qs, code, { onProgress = () => {}, onGroup = () => {}, signal, start = [] } = {}) {
+  const out = start.length ? start.slice() : []; const G = 8; let kept = 0;
+  for (let g = out.length; g < qs.length; g += G) {
+    const part = qs.slice(g, g + G), flat = [], map = [];
+    part.forEach((q, i) => { flat.push(q.text); map.push([i, 'q']); q.options.forEach((o, j) => { flat.push(o); map.push([i, 'o', j]); }); flat.push(q.explanation || ''); map.push([i, 'e']); });
+    const tr = await translateBatch(flat, code, 'auto', { signal }); kept += tr.stats?.kept || 0;
+    const res = part.map(q => ({ ...q, options: [...q.options] }));
+    map.forEach((m, i) => { if (m[1] === 'q') res[m[0]].text = tr[i] || part[m[0]].text; else if (m[1] === 'o') res[m[0]].options[m[2]] = tr[i] || part[m[0]].options[m[2]]; else res[m[0]].explanation = tr[i] || part[m[0]].explanation; });
+    out.push(...res); onGroup(out); onProgress(out.length, qs.length, kept);
+  }
+  out.kept = kept; return out;
 }
-async function translateQuestionSet(qs,code){const flat=[],map=[];qs.forEach((q,i)=>{flat.push(q.text);map.push([i,'q']);q.options.forEach((o,j)=>{flat.push(o);map.push([i,'o',j]);});flat.push(q.explanation||'');map.push([i,'e']);});const tr=await translateBatch(flat,code);const out=qs.map(q=>({...q,options:[...q.options]}));map.forEach((m,i)=>{if(m[1]==='q')out[m[0]].text=tr[i]||qs[m[0]].text;else if(m[1]==='o')out[m[0]].options[m[2]]=tr[i]||qs[m[0]].options[m[2]];else out[m[0]].explanation=tr[i]||qs[m[0]].explanation;});return out;}
-async function ensureQuizTranslation(q,code,status=()=>{}){if(code==='original')return q.questions;q.translations||={};if(q.translations[code]?.length===q.questions.length)return q.translations[code];status(`Bulk translating ${q.questions.length} questions into ${languageLabel(code)}…`);const out=await translateQuestionSet(q.questions,code);q.translations[code]=out;save();return out;}
+async function ensureQuizTranslation(q, code, status = () => {}) {
+  if (code === 'original') return q.questions; q.translations ||= {};
+  if (q.translations[code]?.length === q.questions.length) return q.translations[code];
+  q._tpart ||= {}; const part = q._tpart[code]; const start = Array.isArray(part) && part.length < q.questions.length ? part : [];
+  const n = q.questions.length; status(start.length ? `Resuming ${languageLabel(code)} translation from question ${start.length + 1}/${n}…` : `Translating ${n} questions into ${languageLabel(code)}…`);
+  try {
+    const out = await translateQuestionSet(q.questions, code, { start, onGroup: o => { q._tpart[code] = o.slice(); save(); }, onProgress: (d, t, k) => status(`Translating ${languageLabel(code)}… ${d}/${t} questions${k ? ` (${k} texts kept in original)` : ''}`) });
+    q.translations[code] = out; delete q._tpart[code]; if (!Object.keys(q._tpart).length) delete q._tpart; save(); return out;
+  } catch (e) { const d = q._tpart?.[code]?.length || 0; throw new Error(`${e.message}${d ? ` — ${d}/${n} questions are saved; press Retry to continue from there.` : ''}`); }
+}
 function chooseLanguage(q,callback,current='original'){const opts=Object.entries(QUIZ_LANGS).map(([c,n])=>`<option value="${esc(c)}">${esc(n)} (${c})</option>`).join('');const {el,close}=modal(`<div class="eyebrow">ONLINE · BULK TRANSLATION</div><h2>Switch quiz language</h2><p>Question, every option and explanation are translated together. The original remains unchanged.</p><label>Language<select id="langPick"><option value="original">Original</option>${opts}</select></label><div class="muted" id="langStatus">Requires internet. Public Google translation endpoints may rate-limit.</div><div class="dialog-actions"><button class="primary" id="langApply">Translate / Switch</button></div>`,{wide:true});$('#langPick',el).value=current;$('#langApply',el).onclick=async()=>{const code=$('#langPick',el).value,b=$('#langApply',el);b.disabled=true;b.textContent='Translating…';try{await callback(code,m=>$('#langStatus',el).textContent=m);close();}catch(e){$('#langStatus',el).textContent='Translation failed: '+e.message;b.disabled=false;b.textContent='Retry';}};}
 function openPlayerLanguagePicker() {
   if (!play) return; const p = play; const cur = p.langs?.length ? p.langs : ['original'];
-  const opts = (sel, none) => `${none ? '<option value="">— none —</option>' : ''}<option value="original" ${sel === 'original' ? 'selected' : ''}>Original (as created)</option>${Object.entries(QUIZ_LANGS).map(([c, n]) => `<option value="${esc(c)}" ${c === sel ? 'selected' : ''}>${esc(n)}${p.quiz.translations?.[c] ? ' ✓' : ''}</option>`).join('')}`;
-  const { el, close } = modal(`<div class="eyebrow">MULTI-LANGUAGE MODE</div><h2>Question language</h2><p>Show one language, or 2–3 languages together (bilingual / multilingual). Answers are kept when you switch. ✓ = already translated (works offline).</p>
-   <div class="seg" id="lmMode"><button data-m="single" class="${p.langMode !== 'multi' ? 'active' : ''}">One language</button><button data-m="multi" class="${p.langMode === 'multi' ? 'active' : ''}">Bilingual / multilingual</button></div>
-   <label>Main language<select id="lm1">${opts(cur[0] || 'original')}</select></label>
-   <div id="lmExtra"><label>Second language<select id="lm2">${opts(cur[1] || (cur[0] === 'hi' ? 'original' : 'hi'), true)}</select></label><label>Third language (optional)<select id="lm3">${opts(cur[2] || '', true)}</select></label></div>
-   <div class="muted" id="langStatus">Missing languages are translated online once and then saved on this device.</div><div class="dialog-actions"><button class="primary" id="langApply">Apply</button></div>`, { wide: true });
-  let mode = p.langMode === 'multi' ? 'multi' : 'single';
-  const sync = () => { $$('#lmMode button', el).forEach(b => b.classList.toggle('active', b.dataset.m === mode)); $('#lmExtra', el).hidden = mode !== 'multi'; };
-  $$('#lmMode button', el).forEach(b => b.onclick = () => { mode = b.dataset.m; sync(); }); sync();
+  const opts = sel => `<option value="original" ${sel === 'original' ? 'selected' : ''}>Original (as created)</option>${Object.entries(QUIZ_LANGS).map(([c, n]) => `<option value="${esc(c)}" ${c === sel ? 'selected' : ''}>${esc(n)}${p.quiz.translations?.[c] ? ' ✓' : ''}</option>`).join('')}`;
+  let list = cur.slice(0, MAX_LANGS); if (!list.length) list = ['original']; let mode = p.langMode === 'multi' ? 'multi' : 'single';
+  const { el, close } = modal(`<div class="eyebrow">MULTI-LANGUAGE MODE</div><h2>Question language</h2><p>Show one language, or up to ${MAX_LANGS} languages together (bilingual / multilingual). Answers are kept when you switch. ✓ = already translated (works offline).</p>
+   <div class="seg" id="lmMode"><button data-m="single">One language</button><button data-m="multi">Bilingual / multilingual</button></div>
+   <div id="lmList"></div><button class="secondary" id="lmAdd">＋ Add another language</button>
+   <div class="muted" id="langStatus">Missing languages are translated online once and then saved on this device. Large quizzes are translated in small groups and can be resumed if the connection drops.</div><div class="dialog-actions"><button class="primary" id="langApply">Apply</button></div>`, { wide: true });
+  const draw = () => {
+    $$('#lmMode button', el).forEach(b => b.classList.toggle('active', b.dataset.m === mode)); $('#lmAdd', el).hidden = mode !== 'multi' || list.length >= MAX_LANGS;
+    const shown = mode === 'multi' ? list : list.slice(0, 1);
+    $('#lmList', el).innerHTML = shown.map((c, i) => `<label>${i === 0 ? 'Main language' : 'Language ' + (i + 1)}<span class="lm-row"><select data-li="${i}">${opts(c)}</select>${i > 0 ? `<button class="textbtn danger-text" data-lrm="${i}">✕</button>` : ''}</span></label>`).join('');
+    $$('[data-li]', el).forEach(s => s.onchange = () => { list[+s.dataset.li] = s.value; });
+    $$('[data-lrm]', el).forEach(b => b.onclick = () => { list.splice(+b.dataset.lrm, 1); draw(); });
+  };
+  $$('#lmMode button', el).forEach(b => b.onclick = () => { mode = b.dataset.m; if (mode === 'multi' && list.length < 2) list.push(list[0] === 'hi' ? 'original' : 'hi'); draw(); });
+  $('#lmAdd', el).onclick = () => { if (list.length < MAX_LANGS) { list.push(list.includes('hi') ? 'original' : 'hi'); draw(); } };
+  draw();
   $('#langApply', el).onclick = async () => {
-    const picks = [...new Set([$('#lm1', el).value, $('#lm2', el).value, $('#lm3', el).value].filter(Boolean))];
+    const picks = [...new Set(list.filter(Boolean))];
     const need = (mode === 'multi' ? picks : picks.slice(0, 1)).filter(c => c !== 'original');
-    if (mode === 'multi' && picks.length < 2) return toast('Choose a second language for bilingual mode');
+    if (mode === 'multi' && picks.length < 2) return toast('Choose at least two different languages for multilingual mode');
     const b = $('#langApply', el); b.disabled = true; b.textContent = 'Preparing…';
     try {
       for (const c of need) await ensureQuizTranslation(p.quiz, c, m => $('#langStatus', el).textContent = m);
@@ -1221,7 +1293,7 @@ function settings() {
    <small class="muted">Big jobs (like 50 questions) are split in small sets, so you paste one reply per set.</small></div>
   <div class="divider"></div>
   <h3>Question languages</h3><p class="muted">Default display for new attempts. Languages that aren't translated yet for a quiz can be added from 🌐 inside the quiz.</p>
-  <div class="form-grid"><label>Display mode<select id="langModeSet"><option value="single" ${st.langMode !== 'multi' ? 'selected' : ''}>One language</option><option value="multi" ${st.langMode === 'multi' ? 'selected' : ''}>Bilingual / multilingual</option></select></label><label>Main language<select id="lang1Set">${langOpts(st.langs?.[0] || 'original')}</select></label><label>Second language<select id="lang2Set">${langOpts(st.langs?.[1] || '', true)}</select></label><label>Third language<select id="lang3Set">${langOpts(st.langs?.[2] || '', true)}</select></label></div><button class="secondary" id="saveLangs">Save language preference</button>
+  <div class="form-grid"><label>Display mode<select id="langModeSet"><option value="single" ${st.langMode !== 'multi' ? 'selected' : ''}>One language</option><option value="multi" ${st.langMode === 'multi' ? 'selected' : ''}>Bilingual / multilingual</option></select></label><label>Main language<select id="lang1Set">${langOpts(st.langs?.[0] || 'original')}</select></label><label>Second language<select id="lang2Set">${langOpts(st.langs?.[1] || '', true)}</select></label><label>Third language<select id="lang3Set">${langOpts(st.langs?.[2] || '', true)}</select></label><label>Language 4<select id="lang4Set">${langOpts(st.langs?.[3] || '', true)}</select></label><label>Language 5<select id="lang5Set">${langOpts(st.langs?.[4] || '', true)}</select></label><label>Language 6<select id="lang6Set">${langOpts(st.langs?.[5] || '', true)}</select></label><label>Language 7<select id="lang7Set">${langOpts(st.langs?.[6] || '', true)}</select></label><label>Language 8<select id="lang8Set">${langOpts(st.langs?.[7] || '', true)}</select></label></div><button class="secondary" id="saveLangs">Save language preference</button>
   <div class="divider"></div>
   <h3>Data management</h3><p class="muted">Your quizzes and reports use about <b>${used}</b> on this device.</p><div class="storage-meter"><div class="storage-bar"><i id="storageBarFill" style="width:0%"></i></div><small id="storageInfo">${Store.engine() === 'indexeddb' ? 'Large storage active — no 5 MB limit. Checking free space…' : 'Basic storage (about 5 MB limit) — this device does not support large storage.'}</small></div><p class="muted">Export a backup regularly — uninstalling the app erases its data.</p><button class="secondary" id="settingsBackup">⇩ Export backup</button><button class="textbtn" id="settingsRestore">Restore backup</button><button class="textbtn" id="clearAiCache">Clear saved AI answers</button><button class="textbtn danger-text" id="clearData">Delete all local data</button></div>
   <div class="panel"><h3>About QUIZINOX</h3><img class="about-logo" src="${iconUrl}" alt="QUIZINOX"/><h2>QUIZINOX</h2><p class="muted">A private, offline-first quiz workspace.</p><div class="about-list"><span>✓ Works fully offline — quizzes, results, PDF tools, search, revision</span><span>✓ Smart navigation: swipe, keyboard shortcuts, jump, bookmarks, resume</span><span>✓ Detailed analytics: accuracy, speed, subject/topic, negative marking</span><span>✓ Automatic revision: 1 → 3 → 7 → 15 days</span><span>✓ Multi-language & bilingual question display</span><span>✓ AI analyst, Ask-AI tutor & UPSC question generator (optional, free Gemini keys)</span><span>✓ Coaching PDF converter: SFG · Vajiram · VisionIAS · PW · ForumIAS</span><span>✓ No account, no subscription</span></div><div class="notice">Uninstalling the app or clearing its data erases saved quizzes — keep a backup.</div><div class="version">Version ${APP_VERSION}</div></div></div>`;
@@ -1262,7 +1334,7 @@ function settings() {
   $('#puterOut').onclick = async () => { await AI.puterSignOut(); puterUi(); toast('Signed out'); };
   $('#puterTest').onclick = async () => { const b = $('#puterTest'); b.textContent = '…'; try { const r = await AI.testPuter(); toast(r.ok ? 'Puter login works ✓' : '✕ ' + r.message, 4500); } catch (e) { toast('✕ ' + e.message, 4500); } finally { b.textContent = 'Test'; puterUi(); } };
   $('#saveAi').onclick = () => { const prov = $('#aiPrimary').value, custom = $('#aiCustomModel').value.trim(), chosen = custom || $('#aiModel').value; st.aiPrimary = prov; st.aiModels = { ...(st.aiModels || {}), [prov]: chosen }; if (prov === 'gemini' && chosen) st.aiModel = chosen; st.aiMode = $('#aiMode').value; st.aiAutoFallback = $('#aiFallback').checked; st.aiCross = $('#aiCross').checked; st.aiGuard = $('#aiGuard').checked; st.puterModel = $('#puterCustom').value.trim() || $('#puterModel').value; st.analystDaily = Number($('#analystDaily').value) || 5; st.tutorLang = $('#tutorLangSet').value; if (!st.customBaseUrl && $('#customBase').value.trim()) st.customBaseUrl = $('#customBase').value.trim(); save(); renderKeys(); toast('AI settings saved ✓'); };
-  $('#saveLangs').onclick = () => { const picks = [...new Set([$('#lang1Set').value, $('#lang2Set').value, $('#lang3Set').value].filter(Boolean))]; st.langs = picks.length ? picks : ['original']; st.langMode = $('#langModeSet').value === 'multi' && picks.length > 1 ? 'multi' : 'single'; save(); toast('Language preference saved ✓'); };
+  $('#saveLangs').onclick = () => { const picks = [...new Set([1, 2, 3, 4, 5, 6, 7, 8].map(n => $('#lang' + n + 'Set')?.value).filter(Boolean))]; st.langs = picks.length ? picks : ['original']; st.langMode = $('#langModeSet').value === 'multi' && picks.length > 1 ? 'multi' : 'single'; save(); toast('Language preference saved ✓'); };
   $('#saveProfile').onclick = () => { st.name = $('#userName').value.trim() || 'Learner'; $('#profileName').textContent = st.name; save(); toast('Profile updated'); };
   Store.estimate().then(e => { const info = $('#storageInfo'), bar = $('#storageBarFill'); if (!e || !info || Store.engine() !== 'indexeddb') return; const free = Math.max(0, e.quotaMB - e.usedMB); const fmt = mb => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`; bar.style.width = `${Math.min(100, Math.max(1, e.usedMB / e.quotaMB * 100)).toFixed(1)}%`; info.textContent = `Large storage active — no 5 MB limit · about ${fmt(free)} of space still available for quizzes`; });
   $('#settingsBackup').onclick = backup; $('#settingsRestore').onclick = () => $('#restoreInput').click();
@@ -1329,7 +1401,7 @@ function startRevision(scope = 'due', limit = 30) {
   if (scope === 'bookmarks') items = Object.values(db.bookmarks).map(b => db.revision[b.key] || { ...b, sources: { difficult: true }, stage: 0, due: Date.now() + DAY });
   if (!items.length) return toast(scope === 'due' ? 'Nothing is due right now 🎉' : 'No questions in this list yet');
   items = items.slice(0, limit);
-  const quiz = { id: 'revision', isRevision: true, title: `Revision · ${new Date().toLocaleDateString()}`, subject: 'Revision', settings: { timer: 0, negative: 0, pass: 0 }, questions: items.map(r => ({ id: r.key, revKey: db.revision[r.key] ? r.key : null, text: r.text, options: r.options.slice(), correct: r.correct, explanation: r.explanation || '', topic: r.topic || '', subject: r.subject || 'General', quizId: r.quizId || '', quizTitle: r.quizTitle || '', qid: r.qid || '' })) };
+  const quiz = { id: 'revision', isRevision: true, title: `Revision · ${new Date().toLocaleDateString()}`, subject: 'Revision', settings: { timer: 0, negative: 0, pass: 0 }, questions: items.map(r => ({ id: r.key, revKey: db.revision[r.key] ? r.key : null, text: r.text, options: r.options.slice(), correct: r.correct, explanation: r.explanation || '', topic: r.topic || '', subject: r.subject || 'General', quizId: r.quizId || '', quizTitle: r.quizTitle || '', qid: r.qid || '', fig: r.fig })) };
   startQuiz('revision', 'practice', 'questions', quiz);
 }
 function revisionPage(filter = 'due') {
@@ -1552,15 +1624,18 @@ function aiStudio() {
    <div class="tool-card"><div class="tool-icon">💬</div><h3>Ask AI — Question Tutor</h3><p>On any question: why the answer is correct, why the others are wrong, simple explanation, what else to read for UPSC, similar MCQs. Find "✦ Ask AI" in practice mode, results, revision and search.</p><button class="secondary" id="goTutor">Pick a question</button></div>
    <div class="tool-card"><div class="tool-icon">✦</div><h3>AI Question Generator</h3><p>From a topic, PDF, notes or your weak topics: UPSC MCQs, statements, match the following, assertion-reason, multiple-correct, pairs and chronology. Choose difficulty, language and explanation depth.</p><button class="secondary" id="goGen">Open generator</button></div>
   </div>
-  <div class="panel"><div class="panel-head"><div><h3>💡 Ask a general study doubt</h3><p>Any concept, comparison or "explain like I'm new" question</p></div></div><textarea id="doubtText" rows="3" placeholder="e.g. Difference between Fundamental Rights and Directive Principles with examples"></textarea><div class="dialog-actions"><select id="doubtLang" class="auto-w">${['English', 'Hindi', 'Hinglish'].map(l => `<option ${db.settings.tutorLang === l ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="primary" id="doubtAsk">Ask AI</button></div><div class="muted" id="doubtStatus"></div><div id="doubtOut" class="tutor-out"></div></div>`;
+  <div class="panel"><div class="panel-head"><div><h3>💡 Ask a general study doubt</h3><p>Any concept, comparison or "explain like I'm new" question</p></div></div><textarea id="doubtText" rows="3" placeholder="e.g. Difference between Fundamental Rights and Directive Principles with examples"></textarea><div class="tutor-modes">${Object.entries(RESPONSE_MODES).map(([k, v]) => `<button class="chip ${(db.settings.doubtMode || 'detailed') === k ? 'active' : ''}" data-dm="${k}">${v[0]}</button>`).join('')}</div><div class="dialog-actions"><select id="doubtLen" class="auto-w">${Object.entries(LENGTHS).map(([k, v]) => `<option value="${k}" ${(db.settings.doubtLen || 'normal') === k ? 'selected' : ''}>${v[0]} answer</option>`).join('')}</select><select id="doubtLang" class="auto-w">${['English', 'Hindi', 'Hinglish'].map(l => `<option ${db.settings.tutorLang === l ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="primary" id="doubtAsk">Ask AI</button></div><div class="muted" id="doubtStatus"></div><div id="doubtOut" class="tutor-out"></div><div id="doubtHist"></div></div>`;
+  const drawDoubtHist = () => { const items = recentFor('AI Studio', 8); $('#doubtHist').innerHTML = items.length ? `<div class="panel-head" style="margin-top:14px"><div><h3>🕘 Recent doubts</h3><p>Saved on this device</p></div><button class="textbtn danger-text" id="doubtClear">Clear</button></div>${items.map(l => `<button class="quiz-row" data-dh="${l.id}" style="text-align:left;width:100%"><span><b>${esc(l.prompt.slice(0, 110))}</b><small>${new Date(l.at).toLocaleString()}</small></span></button>`).join('')}` : ''; $$('[data-dh]').forEach(b => b.onclick = () => showAnswer(b.dataset.dh)); $('#doubtClear')?.addEventListener('click', async () => { if (await confirmBox('Clear recent doubts?', 'They are removed from this device.', 'Clear', true)) { clearLog('AI Studio'); drawDoubtHist(); } }); };
+  drawDoubtHist();
+  $$('[data-dm]').forEach(b => b.onclick = () => { db.settings.doubtMode = b.dataset.dm; save(); $$('[data-dm]').forEach(x => x.classList.toggle('active', x === b)); });
   $('#aiKeysBtn').onclick = () => setTab('settings'); $('#goGen').onclick = () => aiGenerator();
   $('#goAnalyst').onclick = () => { setTab('reports'); setTimeout(() => $('#analystPanel')?.scrollIntoView({ behavior: 'smooth' }), 80); };
   $('#goTutor').onclick = () => { if (dueItems().length || Object.keys(db.revision).length) setTab('revision'); else setTab('search'); toast('Tap "✦ Ask AI" on any question'); };
   $('#doubtAsk').onclick = async () => {
     const q = $('#doubtText').value.trim(); if (q.length < 5) return toast('Type your doubt first'); const lang = $('#doubtLang').value; db.settings.tutorLang = lang; save();
-    const key = 'doubt:' + AI.hash(q + '§' + lang); const out = $('#doubtOut'), st = $('#doubtStatus'); const c = AI.cacheGet(key); if (c) { out.innerHTML = `<div class="ai-answer">${md(c)}</div>`; st.textContent = 'Saved answer · no AI request used'; return; }
+    const dMode = db.settings.doubtMode || 'detailed', dLen = $('#doubtLen').value; db.settings.doubtLen = dLen; save(); const key = 'doubt:' + AI.hash(q + '§' + lang + '§' + dMode + '§' + dLen); const out = $('#doubtOut'), st = $('#doubtStatus'); const c = AI.cacheGet(key); if (c) { out.innerHTML = `<div class="ai-answer">${md(c)}</div>`; st.textContent = 'Saved answer · no AI request used'; return; }
     const b = $('#doubtAsk'); b.disabled = true; out.innerHTML = '<div class="ai-loading"><i></i><i></i><i></i></div>';
-    try { const r = await AI.aiCall(`You are an expert, friendly UPSC / competitive-exam tutor. Reply in ${lang}${lang === 'Hinglish' ? ' (Hindi in Roman script mixed with English)' : ''}. Use short headings and bullet points, accurate and under 400 words. If unsure of a fact, say so.\n\nStudent's doubt: ${q.slice(0, 1500)}`, { json: false, maxTokens: 1300, temperature: 0.4, onStatus: m => st.textContent = m }); AI.cacheSet(key, r.text); st.textContent = `Answered by ${AI.modelLabel(r.provider, r.model)}`; out.innerHTML = `<div class="ai-answer">${md(r.text)}</div>`; }
+    try { const r = await AI.aiCall(answerPrompt({ q: q.slice(0, 1500), mode: dMode, length: dLen, lang }), { json: false, system: SYSTEM_PROMPT, maxTokens: dLen === 'long' ? 3200 : dLen === 'short' ? 700 : 1800, temperature: 0.4, onStatus: m => st.textContent = m }); AI.cacheSet(key, r.text); drawDoubtHist(); st.textContent = `Answered by ${AI.modelLabel(r.provider, r.model)}`; out.innerHTML = `<div class="ai-answer">${md(r.text)}</div>`; }
     catch (e) { out.innerHTML = ''; st.innerHTML = `<span class="red-text">✕ ${esc(e.message)}</span>`; } finally { b.disabled = false; }
   };
 }
@@ -1626,12 +1701,15 @@ window.addEventListener('resize', () => { clearTimeout(wideTimer); wideTimer = s
 
 /* ------------------------------ BACK BUTTON ------------------------------ */
 onBackButton(async exit => {
-  const open = $$('.mode-overlay'); if (open.length) { open[open.length - 1].remove(); return; }
-  if (play) { exitPlayerPrompt(); return; }
-  if (lastResult || db.activeTab !== 'home') { setTab('home'); return; }
+  if (goBack()) return;
   exit();
 });
+$('#backBtn').addEventListener('click', () => goBack());
+window.addEventListener('mouseup', e => { if (e.button === 3) { e.preventDefault(); goBack(); } });
+window.addEventListener('keydown', e => { if (e.altKey && e.key === 'ArrowLeft' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { e.preventDefault(); goBack(); } });
+navStack.push({ tab: db.activeTab || 'home', key: 'tab:' + (db.activeTab || 'home'), fn: null }); updateBackBtn();
 window.addEventListener('beforeunload', () => savePlay());
 document.addEventListener('visibilitychange', () => { if (!play) return; if (document.hidden) { savePlay(); play.away = true; } else { play.away = false; play.qEnter = Date.now(); } });
 
 render(); updateCounts();
+initAssist({ get db() { return db; }, view, save, toast, modal, confirmBox, md, AI, buildProfile, dueItems, isPlaying: () => !!play, getEditor: () => currentQuiz });

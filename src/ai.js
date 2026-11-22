@@ -419,7 +419,7 @@ function buildRoutes(preferModel) {
  * Main entry. Returns { text, model, provider, keyLabel, truncated }.
  * opts: json, maxTokens, temperature, model (preferred for the first provider), signal, onStatus(msg), system
  */
-export async function aiCall(prompt, opts = {}) {
+async function aiCallCore(prompt, opts = {}) {
   const { json = true, maxTokens = 2048, temperature = json ? 0.6 : 0.4, model, signal, onStatus = () => {}, system } = opts;
   if (typeof navigator !== 'undefined' && !navigator.onLine) throw new AIError('No internet connection. AI needs internet — all offline features still work.', 'offline');
   const mode = S().aiMode || 'auto';
@@ -579,4 +579,13 @@ export function loginModelOptions(id) {
   const V = LOGIN_VENDORS[id]; const out = new Map(Object.entries(V?.models || {}));
   for (const mid of S().aiLogin?.modelList || []) if (id === 'other' || V.match.test(mid)) if (!out.has(mid)) out.set(mid, mid);
   return [...out].map(([mid, name]) => ({ id: mid, name }));
+}
+
+/* v3.1 — every AI answer can be logged centrally (AI history in every section). The logger is set by the app. */
+let aiLogger = null;
+export const setAiLogger = fn => { aiLogger = fn; };
+export async function aiCall(prompt, opts = {}) {
+  const r = await aiCallCore(prompt, opts);
+  try { aiLogger && aiLogger(prompt, r, opts); } catch { /* logging must never break an AI call */ }
+  return r;
 }

@@ -1,4 +1,6 @@
 // QUIZINOX v2.9 — feature pages (loaded on demand): Mock & Section builder, Achievements, Mistake Notebook,
+import { generateNonVerbal, NV_KINDS, NV_ALL } from './figures.js';
+import { EXPL_TYPES, explRule, explPer, VERBAL_TYPES } from './ai-modes.js';
 // Quizinox Analyser and Quizinox Predictor. Nothing here touches the older features.
 let C = null; // ctx of the page being drawn
 const $ = (s, r = document) => r.querySelector(s);
@@ -12,7 +14,7 @@ const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) +
    MOCK & SECTION TESTS
    ===================================================================================== */
 let B = null; // builder state
-const newSection = (n = 1) => ({ id: Math.random().toString(36).slice(2), name: `Section ${n}`, count: 20, minutes: 30, src: 'quiz', quizIds: [], order: 'random', topic: '', exam: 'UPSC Prelims', diff: 'Mixed', lang: 'English', txt: '', manual: [{ text: '', o: ['', '', '', ''], c: 0, ex: '' }] });
+const newSection = (n = 1) => ({ id: Math.random().toString(36).slice(2), name: `Section ${n}`, count: 20, minutes: 30, src: 'quiz', quizIds: [], order: 'random', topic: '', exam: 'UPSC Prelims', diff: 'Mixed', lang: 'English', expl: 'short', rk: ['nv_series', 'nv_odd', 'nv_mirror', 'nv_matrix', 'vr_series', 'vr_coding'], txt: '', manual: [{ text: '', o: ['', '', '', ''], c: 0, ex: '' }] });
 const TIME_PRESETS = [120, 90, 60, 45, 30, 15, 10];
 
 function mocksPage() {
@@ -33,7 +35,8 @@ function openBuilder(kind) {
 function srcPanel(s, i) {
   const quizzes = C.db.quizzes.filter(q => !q.kind);
   if (s.src === 'quiz') return `<div class="x-src"><div class="x-src-list">${quizzes.length ? quizzes.map(q => `<label class="x-check"><input type="checkbox" data-s="${i}" data-qz="${q.id}" ${s.quizIds.includes(q.id) ? 'checked' : ''}/> <span>${C.esc(q.title)} <small>· ${q.questions.length} Q · ${C.esc(q.subject || 'General')}</small></span></label>`).join('') : '<div class="muted">No quizzes yet — create or import one first.</div>'}</div><div class="form-grid"><label>Pick questions<select data-s="${i}" data-f="order"><option value="random" ${s.order === 'random' ? 'selected' : ''}>Random shuffle</option><option value="seq" ${s.order === 'seq' ? 'selected' : ''}>In sequence (tick order)</option></select></label><div class="x-avail" id="avail-${i}"></div></div></div>`;
-  if (s.src === 'ai') return `<div class="x-src"><div class="form-grid"><label>Topic / syllabus<input data-s="${i}" data-f="topic" value="${C.esc(s.topic)}" placeholder="e.g. Indian Polity — Fundamental Rights"/></label><label>Exam style<input data-s="${i}" data-f="exam" value="${C.esc(s.exam)}"/></label><label>Difficulty<select data-s="${i}" data-f="diff">${['Easy', 'Moderate', 'Hard', 'Mixed'].map(d => `<option ${s.diff === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label><label>Language<select data-s="${i}" data-f="lang">${['English', 'Hindi'].map(d => `<option ${s.lang === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label></div><small class="muted">AI writes exactly the number of questions you set, when you press Create. Needs internet + an AI source in Settings.</small></div>`;
+  if (s.src === 'reason') return `<div class="x-src"><small class="muted">REASONING QUESTION KINDS — figure kinds are built by the app (no AI, always correct); verbal kinds are written by AI</small><div class="chips">${[...NV_ALL.map(k => [k, '🧩 ' + NV_KINDS[k][0]]), ...Object.entries(VERBAL_TYPES).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button class="chip ${(s.rk || []).includes(k) ? 'active' : ''}" data-s="${i}" data-rk="${k}">${l}</button>`).join('')}</div><div class="form-grid"><label>Difficulty<select data-s="${i}" data-f="diff">${['Easy', 'Moderate', 'Hard', 'Mixed'].map(d => `<option ${s.diff === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label><label>Explanation style<select data-s="${i}" data-f="expl">${Object.entries(EXPL_TYPES).map(([k, v]) => `<option value="${k}" ${s.expl === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label><label>Language (verbal)<select data-s="${i}" data-f="lang">${['English', 'Hindi'].map(d => `<option ${s.lang === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label></div></div>`;
+  if (s.src === 'ai') return `<div class="x-src"><div class="form-grid"><label>Topic / syllabus<input data-s="${i}" data-f="topic" value="${C.esc(s.topic)}" placeholder="e.g. Indian Polity — Fundamental Rights"/></label><label>Exam style<input data-s="${i}" data-f="exam" value="${C.esc(s.exam)}"/></label><label>Difficulty<select data-s="${i}" data-f="diff">${['Easy', 'Moderate', 'Hard', 'Mixed'].map(d => `<option ${s.diff === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label><label>Language<select data-s="${i}" data-f="lang">${['English', 'Hindi'].map(d => `<option ${s.lang === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label><label>Explanation style<select data-s="${i}" data-f="expl">${Object.entries(EXPL_TYPES).map(([k, v]) => `<option value="${k}" ${s.expl === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label></div><small class="muted">AI writes exactly the number of questions you set, when you press Create. Needs internet + an AI source in Settings.</small></div>`;
   if (s.src === 'txt') return `<div class="x-src"><textarea rows="6" data-s="${i}" data-f="txt" placeholder="Paste questions (Q1. … 😂 … ✅ … Ex:) or JSON here — or load a file">${C.esc(s.txt)}</textarea><div class="form-grid"><label>Pick questions<select data-s="${i}" data-f="order"><option value="random" ${s.order === 'random' ? 'selected' : ''}>Random shuffle</option><option value="seq" ${s.order === 'seq' ? 'selected' : ''}>In sequence</option></select></label><div class="x-avail" id="avail-${i}"></div></div><button class="secondary" data-s="${i}" data-load="1">⇧ Load .txt / .json file</button></div>`;
   return `<div class="x-src">${s.manual.map((m, k) => `<div class="x-mrow"><div class="x-mhead"><b>Q${k + 1}</b><button class="textbtn" data-s="${i}" data-mdel="${k}">× remove</button></div><textarea rows="2" data-s="${i}" data-m="${k}" data-mf="text" placeholder="Question text">${C.esc(m.text)}</textarea>${m.o.map((o, j) => `<input data-s="${i}" data-m="${k}" data-mf="o${j}" value="${C.esc(o)}" placeholder="Option ${String.fromCharCode(65 + j)}"/>`).join('')}<div class="form-grid"><label>Correct<select data-s="${i}" data-m="${k}" data-mf="c">${['A', 'B', 'C', 'D'].map((l, j) => `<option value="${j}" ${m.c === j ? 'selected' : ''}>${l}</option>`).join('')}</select></label><label>Explanation (optional)<input data-s="${i}" data-m="${k}" data-mf="ex" value="${C.esc(m.ex)}"/></label></div></div>`).join('')}<button class="secondary" data-s="${i}" data-madd="1">＋ Add question</button></div>`;
 }
@@ -61,7 +64,7 @@ function drawBuilder() {
   ${mock ? `<div class="x-total"><label>Total time (minutes)<input id="bTotal" type="number" min="1" max="600" value="${B.totalMin}"/></label><div class="chips">${TIME_PRESETS.map(m => `<button class="chip ${B.totalMin === m ? 'active' : ''}" data-preset="${m}">${fmtMin(m)}</button>`).join('')}</div>${B.timing === 'section' && B.sections.length > 1 ? '<button class="secondary" id="bSpread">⇄ Spread total time over sections</button>' : ''}</div>` : ''}</div>
   ${B.sections.map((s, i) => `<div class="panel x-sec" data-sec="${i}"><div class="panel-head"><div><h3>Section ${i + 1}</h3></div>${mock && B.sections.length > 1 ? `<button class="textbtn danger-text" data-rmsec="${i}">× Remove</button>` : ''}</div>
     <div class="form-grid"><label>Section name / subject<input data-s="${i}" data-f="name" value="${C.esc(s.name)}"/></label><label>Number of questions<input type="number" min="1" max="300" data-s="${i}" data-f="count" value="${s.count}"/></label>${!mock || B.timing === 'section' ? `<label>Section time (minutes)<input type="number" min="0" max="600" data-s="${i}" data-f="minutes" value="${s.minutes}"/></label>` : ''}</div>
-    <div class="x-srcs"><small class="muted">QUESTIONS COME FROM</small><div class="chips">${[['quiz', '▤ My quizzes'], ['ai', '✦ Instant AI'], ['txt', '⎘ TXT / paste'], ['manual', '✎ Write manually']].map(([k, l]) => `<button class="chip ${s.src === k ? 'active' : ''}" data-s="${i}" data-src="${k}">${l}</button>`).join('')}</div></div>${srcPanel(s, i)}</div>`).join('')}
+    <div class="x-srcs"><small class="muted">QUESTIONS COME FROM</small><div class="chips">${[['quiz', '▤ My quizzes'], ['ai', '✦ Instant AI'], ['txt', '⎘ TXT / paste'], ['reason', '🧩 Reasoning (verbal + figures)'], ['manual', '✎ Write manually']].map(([k, l]) => `<button class="chip ${s.src === k ? 'active' : ''}" data-s="${i}" data-src="${k}">${l}</button>`).join('')}</div></div>${srcPanel(s, i)}</div>`).join('')}
   ${mock ? '<button class="secondary x-add" id="bAdd">＋ Add another section</button>' : ''}
   <div class="x-footer panel"><div id="bSummary"></div><div class="dialog-actions"><button class="secondary" id="bSave">Save only</button><button class="primary" id="bCreate">Create &amp; start →</button></div><div class="muted" id="bStatus"></div></div>`;
   updateAvail(); bindBuilder();
@@ -79,6 +82,7 @@ function bindBuilder() {
   $('#bAdd')?.addEventListener('click', () => { B.sections.push(newSection(B.sections.length + 1)); drawBuilder(); });
   $$('[data-rmsec]').forEach(b => b.onclick = () => { B.sections.splice(Number(b.dataset.rmsec), 1); drawBuilder(); });
   $$('[data-src]').forEach(b => b.onclick = () => { B.sections[Number(b.dataset.s)].src = b.dataset.src; drawBuilder(); });
+  $$('[data-rk]').forEach(b => b.onclick = () => { const sec = B.sections[Number(b.dataset.s)]; sec.rk = sec.rk || []; const k = b.dataset.rk; sec.rk = sec.rk.includes(k) ? sec.rk.filter(x => x !== k) : [...sec.rk, k]; if (!sec.rk.length) sec.rk = [k]; drawBuilder(); });
   $$('[data-madd]').forEach(b => b.onclick = () => { B.sections[Number(b.dataset.s)].manual.push({ text: '', o: ['', '', '', ''], c: 0, ex: '' }); drawBuilder(); });
   $$('[data-mdel]').forEach(b => b.onclick = () => { const s = B.sections[Number(b.dataset.s)]; s.manual.splice(Number(b.dataset.mdel), 1); if (!s.manual.length) s.manual.push({ text: '', o: ['', '', '', ''], c: 0, ex: '' }); drawBuilder(); });
   $$('[data-load]').forEach(b => b.onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.txt,.json,text/plain,application/json'; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; B.sections[Number(b.dataset.s)].txt = await f.text(); drawBuilder(); }; inp.click(); });
@@ -96,13 +100,31 @@ function onField(e) {
 async function aiMake(s, cb) {
   const out = []; let guard = 0;
   while (out.length < s.count && guard++ < 8) {
-    const n = Math.min(15, s.count - out.length); cb(`AI is writing questions… ${out.length}/${s.count}`);
+    const n = Math.min(explPer(s.expl || 'short') + 4, s.count - out.length); cb(`AI is writing questions… ${out.length}/${s.count}`);
     const avoid = out.slice(-12).map(q => q.text.slice(0, 70)).join(' | ');
-    const prompt = `Create exactly ${n} high-quality multiple-choice questions in ${s.lang} for the exam "${s.exam}". Subject/topic: ${s.topic || s.name}. Difficulty: ${s.diff}. Each question has exactly 4 options and exactly ONE correct option, and a 2–3 line explanation. Do not repeat these already-made questions: ${avoid || 'none'}.\nReturn ONLY JSON: {"questions":[{"question":"...","options":["...","...","...","..."],"correct":"A","explanation":"...","topic":"sub-topic"}]}`;
+    const prompt = `Create exactly ${n} high-quality multiple-choice questions in ${s.lang} for the exam "${s.exam}". Subject/topic: ${s.topic || s.name}. Difficulty: ${s.diff}. Each question has exactly 4 options and exactly ONE correct option, and an explanation field written in this style: ${explRule(s.expl || 'short')} Do not repeat these already-made questions: ${avoid || 'none'}.\nReturn ONLY JSON: {"questions":[{"question":"...","options":["...","...","...","..."],"correct":"A","explanation":"...","topic":"sub-topic"}]}`;
     const text = await C.gemini(prompt, { json: true, maxTokens: 5200, temperature: 0.7 });
     try { out.push(...C.parseJSON(text)); } catch { /* retry next loop */ }
   }
   return out.slice(0, s.count);
+}
+async function reasonMake(s, cb) {
+  const kinds = (s.rk && s.rk.length ? s.rk : ['nv_series']), nv = kinds.filter(k => NV_ALL.includes(k)), vr = kinds.filter(k => VERBAL_TYPES[k]);
+  const nNv = vr.length ? (nv.length ? Math.ceil(s.count / 2) : 0) : s.count, nVr = s.count - nNv; const out = [];
+  if (nNv) { cb(`Building ${nNv} figure questions…`); out.push(...generateNonVerbal(nv, nNv, s.expl || 'detailed', Date.now())); }
+  if (nVr) {
+    if (!C.AI.aiReady()) throw new Error('Verbal reasoning needs AI — add a key/sign in under Settings, or untick the verbal kinds (figure questions need no AI).');
+    let guard = 0, got = [];
+    while (got.length < nVr && guard++ < 8) {
+      const n = Math.min(explPer(s.expl || 'short'), nVr - got.length); cb(`AI is writing verbal reasoning… ${got.length}/${nVr}`);
+      const mix = vr.map(k => `- ${VERBAL_TYPES[k].label.replace(/^\S+\s/, '')}: ${VERBAL_TYPES[k].rule}`).join('\n'); const avoid = got.slice(-10).map(q => q.text.slice(0, 60)).join(' | ');
+      const prompt = `Create exactly ${n} verbal reasoning multiple-choice questions in ${s.lang} for the exam "${s.exam}", difficulty ${s.diff}. Kinds (spread them):\n${mix}\nEach question has exactly 4 options and exactly ONE correct option; solve each question yourself first and make sure the key is right. Everything must be in words (no pictures). Explanation style: ${explRule(s.expl || 'short')}. Do not repeat: ${avoid || 'none'}.\nReturn ONLY JSON: {"questions":[{"question":"...","options":["...","...","...","..."],"correct":"A","explanation":"...","topic":"Verbal reasoning"}]}`;
+      const text = await C.gemini(prompt, { json: true, maxTokens: 6000, temperature: 0.6 });
+      try { got.push(...C.parseJSON(text).map(q => ({ ...q, topic: q.topic || 'Verbal reasoning' }))); } catch { /* retry */ }
+    }
+    out.push(...got.slice(0, nVr));
+  }
+  return C.shuffle(out).slice(0, s.count);
 }
 function pick(pool, count, order) { let a = pool.slice(); if (order === 'random') C.shuffle(a); return a.slice(0, count); }
 const cloneQ = (q, subject) => ({ ...q, id: C.uid(), options: q.options.slice(), subject });
@@ -125,6 +147,7 @@ async function create(start) {
     for (const s of B.sections) {
       let qs;
       if (s.src === 'ai') { if (!C.AI.aiReady()) throw new Error('AI is not set up — add a key or sign in under Settings.'); qs = await aiMake(s, m => { status.textContent = `${s.name}: ${m}`; }); }
+      else if (s.src === 'reason') qs = await reasonMake(s, m => { status.textContent = `${s.name}: ${m}`; });
       else qs = pick(poolOf(s), s.count, s.order);
       if (!qs.length) throw new Error(`“${s.name}” has no questions yet — pick a source with questions.`);
       if (qs.length < s.count) C.toast(`“${s.name}”: only ${qs.length} of ${s.count} questions available — using all of them`, 4500);

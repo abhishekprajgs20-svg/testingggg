@@ -207,3 +207,17 @@ A new sidebar group (and a "UPSC Preparation Centre" entry in the mobile **More*
 **Current Affairs fetching.** Android uses native HTTP (`CapacitorHttp`), Windows uses an Electron main-process fetch (http/https text only). A plain browser may be blocked by CORS — use *Paste article*. Default feeds can be changed under ⚙ Sources.
 
 **Honest limits.** Memorisation datasets are starter sets (see in-app source notes) — not complete lists; import JSON to extend them. The map outline is a simplified silhouette (no state borders); markers use real approximate coordinates.
+
+
+## QUIZINOX 3.1.0 — what's new
+1. **Translator rebuilt** (quiz translation *and* the TXT/PDF Translator tool): Android now uses native HTTP (no WebView/CORS "http" errors); small chunks, adaptive concurrency, exponential back-off, two Google hosts + MyMemory fallback, resumable progress (a failed 300-question run continues from where it stopped), failed batches retried gently. Nothing is silently mis-ordered (unit-tested with 20 % failures + malformed replies).
+2. **Up to 8 languages** in multi-language mode (player picker + Settings).
+3. **✦ AI everywhere** (except the translator): floating ✦ AI button + "Ask AI" chip on every section. It reads a short summary of the current page (switchable) and gives advice, plans, resource suggestions. Quiz menu → "Ask AI about this quiz".
+4. **Back navigation**: ‹ Back button in the top bar (also Android back, mouse back button, Alt+←) — steps back through screens, results, quiz editor and dialogs; dialogs opened from a menu get their own ‹ Back to return to that menu.
+5. **AI Studio doubt box**: 14 response modes (Simple, Detailed, Prelims, Mains, Compare, Table, Timeline, Notes, Step-by-step, Advice, Quiz me, Hinglish…), length, language, and saved Recent doubts.
+6. **UPSC Preparation Centre** pages all have Ask AI (books to add, what to do next…).
+7. **10 explanation styles** for generated questions (short, detailed, extended deep-dive, option-wise, concept, trick, Prelims trap, Mains angle, step-by-step, one-line) — in the AI generator and in the Mock/Section builder.
+8. **Reasoning questions**: verbal (AI: series, coding-decoding, blood relation, direction, syllogism, seating, odd word, analogy, operations, Venn) and **non-verbal with figures** (series, odd one out, mirror image, water image, rotation, analogy, 3×3 matrix, counting). Figure questions are built by the app by rules — always correct, no AI quota used, work offline. Available in the AI generator, the Mock/Section builder ("🧩 Reasoning" source) and shown in player, OMR paper, review and revision.
+9. **OMR layout**: the question paper and the OMR sheet scroll independently — the sheet stays fixed. Phones get a split view (paper above, sheet below) with a switch for paper-only / sheet-only.
+10. **Backup includes AI data**: API keys, provider/model preferences, AI history (choose "with keys" or "without keys" when exporting). Restore/merge brings them back.
+11. **AI history everywhere**: every assistant chat is saved per section (new / open / delete / clear); other AI answers in the app (tutor, doubt box…) are logged under History → "Other AI answers"; ★ Save keeps favourites.
