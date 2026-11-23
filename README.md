@@ -1,4 +1,4 @@
-# QUIZINOX v3.2.0 — Offline + Online Learning & Quiz App (Android + Windows)
+# QUIZINOX v2.6.1 — Offline + Online Quiz App (Android + Windows)
 
 Local-first quiz maker/player built from the QUIZ-BOT engines. Works fully offline;
 AI features use the internet only when you start them.
@@ -19,17 +19,6 @@ AI features use the internet only when you start them.
 - AI question generator from a topic or from your notes / PDF (English / Hindi / bilingual)
 - Online bulk quiz translation into 100+ Indian and world languages (question, options and explanations); switch language during a live attempt without changing answer indexes\n- Result exports: playable HTML quiz, Test PDF, Solution PDF, merged Test+Solution PDF, Study Notes HTML and print-to-PDF Notes in original or translated language\n- Original supplied Quiz Maker, Test Series Maker, Notes Generator and TXT/PDF Translator are bundled under File Studio / result exports and prefilled with the selected quiz where supported
 - Topbar shows ONLINE / OFFLINE status live
-
-## Version 3.2.0 — Learning workspace expansion
-- Overview home screen no longer displays the UPSC overview card; the UPSC Preparation Centre and its navigation remain available.
-- New Notes & Notebooks, a handwriting-friendly Study Canvas + AI companion in Personal Knowledge Vault, multiple Exam Countdown Roadmaps, QUIZINOX Teacher, voice-enabled Discussion Room and Content Creator Studio.
-- OMR results now include a detailed evaluation table and PNG/PDF export.
-- Optional Gemini/Groq/other-provider API rotation can be enabled in **Settings → AI**. Select at least two providers with usable keys. Per-key rotation and quota protection are retained; one provider answers each request.
-- AI-powered actions require internet and a configured provider. Local notes, vault records and roadmaps remain on-device.
-- Scanned PDFs and screenshot pixels are stored but are not OCR-processed. Voice recognition depends on the device/browser; use Android keyboard dictation or Windows **Win + H** where native speech recognition is unavailable.
-- Content Creator Studio can generate up to 100 MCQs, flashcards or statement-based questions per selected output in smaller batches; source-based mock tests are added directly to My Quizzes. Presentation generation currently produces a slide outline, not a .pptx file.
-
-See [CHANGELOG-3.2.0.md](CHANGELOG-3.2.0.md) for full details.
 
 ## Build the APK (GitHub)
 1. `python -m pip install requests`

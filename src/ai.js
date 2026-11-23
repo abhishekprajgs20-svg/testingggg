@@ -142,6 +142,9 @@ export function providerOrder() {
   return o;
 }
 export const providerEnabled = p => S().aiDisabled?.[p] !== true;
+/** v4.0 — Multi-AI pool rotation: when ON, every AI request rotates across ALL enabled
+ *  providers and ALL their keys (fair round-robin), instead of exhausting one provider first. */
+export const poolMode = () => S().aiPool !== false;
 export function getKeys() { return (S().aiKeys || []).filter(k => k && k.key); }
 export const keysOf = p => getKeys().filter(k => providerOf(k) === p);
 const usable = k => k.enabled !== false && k.status !== 'invalid';
@@ -391,23 +394,10 @@ function send(provider, key, model, prompt, o) {
 function keyCandidates(provider) { if (provider === 'web') return [{ id: 'web', label: 'Web chat', key: 'web', provider: 'web' }]; return provider === 'puter' ? [{ id: 'puter', label: 'Puter login', key: 'puter', provider: 'puter' }] : keysOf(provider).filter(usable); }
 function buildRoutes(preferModel) {
   const s = S(); const mode = s.aiMode || 'auto'; const src = aiSource(); const routes = []; const seen = new Set();
-  const configuredPool = Array.isArray(s.aiMultiProviders) ? [...new Set(s.aiMultiProviders)].filter(p => PROVIDERS[p] && providerEnabled(p) && keyCandidates(p).length) : [];
-  const multiPoolActive = s.aiMultiProviderEnabled === true && mode !== 'login' && configuredPool.length >= 2;
   const add = (provider, model) => { const id = provider + '|' + model; if (!seen.has(id) && routes.length < MAX_ROUTES) { seen.add(id); routes.push({ provider, model }); } };
   const addApi = () => {
-    const allOrder = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && keyCandidates(p).length);
-    let list = s.aiCross === false ? allOrder.slice(0, 1) : allOrder;
-    // Optional multi-provider pool: rotate the first provider for every new AI job,
-    // while retaining the existing per-key least-used rotation and error fallbacks.
-    const selected = configuredPool;
-    if (multiPoolActive) {
-      const start = Math.max(0, Number(s.aiProviderCursor) || 0) % selected.length;
-      const rotated = selected.slice(start).concat(selected.slice(0, start));
-      s.aiProviderCursor = (start + 1) % selected.length;
-      try { ctx.saveSettings(); } catch { /* provider rotation must not break the request */ }
-      const extraFallbacks = s.aiCross === false ? [] : allOrder.filter(p => !selected.includes(p));
-      list = s.aiCross === false ? rotated.slice(0, 1) : [...rotated, ...extraFallbacks];
-    }
+    const order = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && keyCandidates(p).length);
+    const list = s.aiCross === false ? order.slice(0, 1) : order;
     list.forEach((p, i) => {
       const P = PROVIDERS[p]; const first = (i === 0 && preferModel) || selectedModel(p);
       if (first) add(p, first);
@@ -418,15 +408,38 @@ function buildRoutes(preferModel) {
   const addLogin = () => { if (puterLinked()) activeLogins().forEach(id => add('puter', loginModel(id))); };
   if (src === 'login') addLogin();
   else if (src === 'api') addApi();
-  else if (src === 'login-api') { if (multiPoolActive) { addApi(); addLogin(); } else { addLogin(); addApi(); } }
+  else if (src === 'login-api') { addLogin(); addApi(); }
   else if (src === 'api-login') { addApi(); addLogin(); }
   else if (src === 'web') add('web', webSite().id);
-  else { // 'default' — legacy order is unchanged unless the optional multi-provider API pool is active
-    if (multiPoolActive && mode !== 'login') addApi();
-    if (mode !== 'api' && !multiPoolActive && puterLinked()) add('puter', s.puterModel || '');
-    if (mode !== 'login' && !multiPoolActive) addApi();
+  else { // 'default' — exactly the v2.7 behaviour
+    if (mode !== 'api' && puterLinked()) add('puter', s.puterModel || '');
+    if (mode !== 'login') addApi();
   }
   return routes;
+}
+
+/* ---------------- v4.0 — Multi-AI pool rotation ---------------- */
+/** Flat per-key routes across every enabled API provider (one route per usable key). */
+function buildPoolRoutes(preferModel) {
+  const s = S(); const out = [];
+  let provs = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && PROVIDERS[p] && keysOf(p).some(usable));
+  if (s.aiCross === false) provs = provs.slice(0, 1); // pool still honours "no cross-provider"
+  for (const p of provs) {
+    const m = (p === provs[0] && preferModel) || selectedModel(p) || PROVIDERS[p].chain?.[0];
+    if (!m) continue;
+    const keys = keysOf(p).filter(usable)
+      .map(k => ({ k, used: keyAvailability(k, m).used }))
+      .sort((a, b) => a.used - b.used);
+    for (const { k } of keys) if (out.length < MAX_ROUTES) out.push({ provider: p, model: m, key: k.id });
+  }
+  return out;
+}
+/** Rotate the pool so each new request starts at the next key/provider (persisted cursor). */
+function rotatePool(routes) {
+  if (routes.length < 2) return routes;
+  const s = S(); const cur = (Number(s.aiPoolCursor) || 0) % routes.length;
+  s.aiPoolCursor = cur + 1; ctx.saveSettings();
+  return routes.slice(cur).concat(routes.slice(0, cur));
 }
 
 /**
@@ -438,14 +451,28 @@ async function aiCallCore(prompt, opts = {}) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) throw new AIError('No internet connection. AI needs internet — all offline features still work.', 'offline');
   const mode = S().aiMode || 'auto';
   if (!aiReady()) throw new AIError(aiSource() === 'login' ? 'Sign in to Puter and switch on at least one AI account in Settings → AI accounts.' : aiSource() === 'login-api' || aiSource() === 'api-login' ? 'Add an AI API key or sign in (Settings → AI accounts) first.' : mode === 'login' ? 'Sign in to Puter in Settings → AI, or switch to "API keys".' : 'Add an AI API key (or sign in) in Settings → AI.', 'nokey');
-  const routes = buildRoutes(model);
+  let routes = buildRoutes(model);
+  if (poolMode()) {
+    // v4.0 pool rotation: replace per-provider key rotation with one flat route per key,
+    // spanning ALL enabled providers, then rotate the starting point per request.
+    const poolByProv = new Map();
+    for (const r of buildPoolRoutes(model)) { const a = poolByProv.get(r.provider) || []; a.push(r); poolByProv.set(r.provider, a); }
+    if (poolByProv.size) {
+      const out = []; const put = new Set();
+      for (const r of routes) {
+        if (poolByProv.has(r.provider)) { if (!put.has(r.provider)) { put.add(r.provider); out.push(...poolByProv.get(r.provider)); } }
+        else out.push(r);
+      }
+      if (out.length) routes = rotatePool(out);
+    }
+  }
   if (!routes.length) throw new AIError('No AI provider is enabled. Check Settings → AI.', 'nokey');
   const st = { lastErr: null, sawLimit: false, minWait: Infinity, tried: 0 };
   const o = { json, maxTokens, temperature, signal, system };
 
   const runRoute = async (route, allowWait) => {
     const { provider, model: m } = route; const P = provider === 'puter' ? { name: 'Login account', kind: 'puter' } : provider === 'web' ? { name: 'Web chat', kind: 'web' } : PROVIDERS[provider];
-    const cands = keyCandidates(provider); if (!cands.length) return null;
+    const cands = route.key ? keyCandidates(provider).filter(k => k.id === route.key) : keyCandidates(provider); if (!cands.length) return null;
     let overload = 0, guard = 0;
     while (guard++ < cands.length * 3 + 6) {
       if (signal?.aborted) throw new AIError('Cancelled', 'abort');

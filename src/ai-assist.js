@@ -48,9 +48,15 @@ const SECTIONS = {
   planner: { ctx: () => upscCtx('planner'), q: ['Is my plan realistic? What should I change?', 'Rebalance my week', 'What should I add or remove?'] },
   ca: { ctx: () => upscCtx('ca'), q: ['Summarise today\'s headlines for UPSC', 'Link these headlines to the syllabus', 'What current-affairs sources should I add?'] },
   doubt: { ctx: () => upscCtx('doubt'), q: ['Explain a concept I am stuck on'] },
+  notes: { ctx: () => `Notes Hub: ${(X.db.notesHub?.root || []).length} top-level sections. ${perf()}`, q: ['Organise my notes better', 'What notes should I create for my weak topics?', 'Summarise my revision priorities'] },
+  vault: { ctx: () => `Knowledge Vault: ${(X.db.vault?.items || []).length} saved items. ${perf()}`, q: ['Quiz me from my vault facts', 'What should I add to my vault?', 'Make a revision plan from my saved items'] },
+  roadmap: { ctx: () => `Exam Roadmap: ${(X.db.roadmap?.exams || []).map(e => `${e.name} on ${e.date}`).join('; ') || 'no exams added yet'}. ${perf()}`, q: ['How should I split my time between my exams?', 'Is my roadmap realistic?', 'What should I study this week?'] },
+  teacher: { ctx: perf, q: ['What topic should I learn next?', 'Which of my weak concepts needs teaching first?'] },
+  debate: { ctx: perf, q: ['Give me good debate topics for UPSC', 'How do I structure a strong argument?', 'Tips to improve my analytical answers'] },
+  studio: { ctx: () => `Creator Studio projects: ${(X.db.studio?.projects || []).length}. Quizzes: ${X.db.quizzes.length}.`, q: ['What content should I create from my study material?', 'Convert my notes into practice questions', 'Plan a worksheet for my weak topics'] },
 };
 const secOf = tab => SECTIONS[tab] || { ctx: perf, q: ['What can you help me with here?', 'Suggest what I should do next'] };
-const labelOf = tab => ({ home: 'Home', quizzes: 'Quiz library', create: 'Create quiz', revision: 'Revision', search: 'Question search', reports: 'Analytics', mocks: 'Mock & Sections', notebook: 'Mistake Notebook', achievements: 'Achievements', analyser: 'Analyser', predictor: 'Predictor', ai: 'AI Studio', tools: 'File Studio', settings: 'Settings', upsc: 'UPSC Overview', syllabus: 'Syllabus Tracker', memlab: 'Memorisation Lab', flash: 'Flashcards', planner: 'Study Planner', ca: 'Current Affairs', doubt: 'Doubt Solver' }[tab] || tab);
+const labelOf = tab => ({ home: 'Home', quizzes: 'Quiz library', create: 'Create quiz', revision: 'Revision', search: 'Question search', reports: 'Analytics', mocks: 'Mock & Sections', notebook: 'Mistake Notebook', achievements: 'Achievements', analyser: 'Analyser', predictor: 'Predictor', ai: 'AI Studio', tools: 'File Studio', settings: 'Settings', upsc: 'UPSC Overview', syllabus: 'Syllabus Tracker', memlab: 'Memorisation Lab', flash: 'Flashcards', planner: 'Study Planner', ca: 'Current Affairs', doubt: 'Doubt Solver', notes: 'Notes Hub', vault: 'Knowledge Vault', roadmap: 'Exam Roadmap', teacher: 'Teach Me Mode', debate: 'Discussion Room', studio: 'Creator Studio' }[tab] || tab);
 
 /** Shared prompt builder (also used by the AI Studio doubt box). */
 export function answerPrompt({ q, mode = 'detailed', length = 'normal', lang = 'English', context = '', history = '' }) {

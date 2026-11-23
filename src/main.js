@@ -9,8 +9,6 @@ import { EXPL_TYPES, explRule, explPer, VERBAL_TYPES, RESPONSE_MODES, LENGTHS } 
 import { initAssist, openAssist, answerPrompt, SYSTEM_PROMPT, recentFor, clearLog, showAnswer } from './ai-assist.js';
 window.__qxGT = (q, sl, tl) => gtRaw(q, sl, tl); // used by the TXT/PDF translator tool (iframe)
 import { UPSC_NAV, UPSC_TABS, UPSC_LABELS, mergeUpsc } from './upsc/lite.js';
-import { renderLearningPage } from './learning-suite.js';
-import './learning-suite.css';
 const iconUrl = './quizinox-icon.png';
 // Keep the quiz/player startup bundle light. PDF engines and jsPDF are loaded
 // only when a user actually opens a PDF/export feature (important on low-RAM PCs).
@@ -43,8 +41,8 @@ function explanationLines(value) {
 }
 const L = i => String.fromCharCode(65 + i);
 const STORE = 'quizinox_local_v1', PLAY_STORE = 'quizinox_play_v1';
-const APP_VERSION = '3.2.0';
-const defaultState = () => ({ quizzes: [], attempts: [], notebook: { items: {} }, notebookSeeded: false, achSeen: [], analyser: [], shuffleHistory: {}, bookmarks: {}, revision: {}, revStats: { mastered: 0 }, aiAnalysis: null, aiLog: {}, settings: { name: 'Learner', geminiKey: '', aiKeys: [], aiModel: AI.FALLBACK_CHAIN[0], aiModels: {}, aiPrimary: 'gemini', aiMode: 'auto', aiOrder: AI.DEFAULT_ORDER.slice(), aiDisabled: {}, aiCross: true, aiMultiProviderEnabled: false, aiMultiProviders: [], aiProviderCursor: 0, aiGuard: true, puterLinked: false, puterModel: '', customBaseUrl: '', aiModelLists: {}, aiAutoFallback: true, analystDaily: 5, tutorLang: 'English', langMode: 'single', langs: ['original'], aiSource: 'default', aiLogin: { enabled: {}, models: {}, order: [], modelList: [] }, aiWeb: { site: 'chatgpt', customUrl: '' } }, activeTab: 'home' });
+const APP_VERSION = '4.0.0';
+const defaultState = () => ({ quizzes: [], attempts: [], notebook: { items: {} }, notebookSeeded: false, achSeen: [], analyser: [], shuffleHistory: {}, bookmarks: {}, revision: {}, revStats: { mastered: 0 }, aiAnalysis: null, aiLog: {}, settings: { name: 'Learner', geminiKey: '', aiKeys: [], aiModel: AI.FALLBACK_CHAIN[0], aiModels: {}, aiPrimary: 'gemini', aiMode: 'auto', aiOrder: AI.DEFAULT_ORDER.slice(), aiDisabled: {}, aiCross: true, aiGuard: true, puterLinked: false, puterModel: '', customBaseUrl: '', aiModelLists: {}, aiAutoFallback: true, analystDaily: 5, tutorLang: 'English', langMode: 'single', langs: ['original'], aiSource: 'default', aiLogin: { enabled: {}, models: {}, order: [], modelList: [] }, aiWeb: { site: 'chatgpt', customUrl: '' }, aiPool: true, aiPoolCursor: 0 }, activeTab: 'home', notesHub: { root: [] }, vault: { items: [] }, roadmap: { exams: [] }, teacher: { sessions: [] }, debate: { sessions: [] }, studio: { projects: [] } });
 let db = load();
 let currentQuiz = null, play = null, toastTimer = null, lastResult = null;
 AI.initAI({ getSettings: () => db.settings, saveSettings: () => save(), askWeb: o => askWebChat(o) });
@@ -52,7 +50,7 @@ AI.initAI({ getSettings: () => db.settings, saveSettings: () => save(), askWeb: 
 function normalizeState(d) {
   const base = defaultState(); d = d && typeof d === 'object' ? d : {};
   const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  const s = { ...base, ...d, settings: { ...base.settings, ...obj(d.settings) }, quizzes: Array.isArray(d.quizzes) ? d.quizzes : [], attempts: Array.isArray(d.attempts) ? d.attempts : [], shuffleHistory: obj(d.shuffleHistory), bookmarks: obj(d.bookmarks), revision: obj(d.revision), revStats: { mastered: 0, ...obj(d.revStats) }, aiLog: obj(d.aiLog), notebook: { items: obj(obj(d.notebook).items) }, achSeen: Array.isArray(d.achSeen) ? d.achSeen : [], analyser: Array.isArray(d.analyser) ? d.analyser : [], notes: Array.isArray(d.notes) ? d.notes : [], vault: Array.isArray(d.vault) ? d.vault : [], roadmaps: Array.isArray(d.roadmaps) ? d.roadmaps : [], teacherSessions: Array.isArray(d.teacherSessions) ? d.teacherSessions : [], discussions: Array.isArray(d.discussions) ? d.discussions : [], creatorOutputs: Array.isArray(d.creatorOutputs) ? d.creatorOutputs : [] };
+  const s = { ...base, ...d, settings: { ...base.settings, ...obj(d.settings) }, quizzes: Array.isArray(d.quizzes) ? d.quizzes : [], attempts: Array.isArray(d.attempts) ? d.attempts : [], shuffleHistory: obj(d.shuffleHistory), bookmarks: obj(d.bookmarks), revision: obj(d.revision), revStats: { mastered: 0, ...obj(d.revStats) }, aiLog: obj(d.aiLog), notebook: { items: obj(obj(d.notebook).items) }, achSeen: Array.isArray(d.achSeen) ? d.achSeen : [], analyser: Array.isArray(d.analyser) ? d.analyser : [] };
   if (!Array.isArray(s.settings.aiKeys)) s.settings.aiKeys = [];
   // v2.4 → v2.5: single Gemini key becomes the first entry of the multi-key list
   if (s.settings.geminiKey && !s.settings.aiKeys.some(k => k.key === s.settings.geminiKey)) s.settings.aiKeys.push({ id: uid(), label: 'Key 1', key: s.settings.geminiKey, enabled: true, status: 'unknown' });
@@ -122,18 +120,18 @@ document.querySelector('#app').innerHTML = `
       <button class="navitem" data-tab="reports"><span>▥</span> Analytics</button>
       <button class="navitem" data-tab="mocks"><span>◷</span> Mock &amp; Sections</button>
       <button class="navitem" data-tab="notebook"><span>✎</span> Mistake Notebook</button>
-      <div class="nav-group">LEARN &amp; CREATE</div>
-      <button class="navitem" data-tab="notes"><span>📝</span> Notes &amp; Notebooks</button>
-      <button class="navitem" data-tab="vault"><span>🧠</span> Knowledge Vault</button>
-      <button class="navitem" data-tab="roadmap"><span>🗺️</span> Exam Roadmaps</button>
-      <button class="navitem" data-tab="teacher"><span>🎓</span> QUIZINOX Teacher</button>
-      <button class="navitem" data-tab="discussion"><span>⚖️</span> Discussion Room</button>
-      <button class="navitem" data-tab="creator"><span>✨</span> Content Creator Studio</button>
       <button class="navitem" data-tab="achievements"><span>🏆</span> Achievements</button>
       <button class="navitem" data-tab="analyser"><span>🧠</span> Quizinox Analyser</button>
       <button class="navitem" data-tab="predictor"><span>🎯</span> Quizinox Predictor</button>
       <button class="navitem" data-tab="ai"><span>✦</span> AI Studio</button>
       <button class="navitem" data-tab="tools"><span>⌘</span> File Studio</button>
+      <div class="nav-group">LEARNING TOOLS · NEW</div>
+      <button class="navitem v4-nav" data-tab="notes"><span>🗒</span> Notes Hub</button>
+      <button class="navitem v4-nav" data-tab="vault"><span>🗄</span> Knowledge Vault</button>
+      <button class="navitem v4-nav" data-tab="roadmap"><span>🗓</span> Exam Roadmap</button>
+      <button class="navitem v4-nav" data-tab="teacher"><span>🎓</span> Teach Me Mode</button>
+      <button class="navitem v4-nav" data-tab="debate"><span>⚖</span> Discussion Room</button>
+      <button class="navitem v4-nav" data-tab="studio"><span>🛠</span> Creator Studio</button>
       <div class="nav-group">UPSC PREPARATION CENTRE</div>
       ${UPSC_NAV.map(([k, i, l]) => `<button class="navitem u-nav" data-tab="${k}"><span>${i}</span> ${l}</button>`).join('')}
       <button class="navitem" data-tab="settings"><span>⚙</span> Settings</button>
@@ -154,9 +152,10 @@ document.querySelector('#app').innerHTML = `
 `;
 
 const view = $('#view');
-const labels = { home: 'Your learning space', quizzes: 'Your quiz library', create: 'Quiz studio', revision: 'Automatic revision', search: 'Question bank search', reports: 'Performance analytics', ai: 'AI study studio', tools: 'File studio', settings: 'Preferences', mocks: 'Mock tests & section tests', notebook: 'Personal mistake notebook', notes: 'Notes & notebooks', vault: 'Personal Knowledge Vault', roadmap: 'Exam Countdown Roadmap', teacher: 'QUIZINOX Teacher', discussion: 'Discussion Room', creator: 'Content Creator Studio', achievements: 'Your achievements', analyser: 'Quizinox Analyser', predictor: 'Quizinox Predictor' };
+const labels = { home: 'Your learning space', quizzes: 'Your quiz library', create: 'Quiz studio', revision: 'Automatic revision', search: 'Question bank search', reports: 'Performance analytics', ai: 'AI study studio', tools: 'File studio', settings: 'Preferences', mocks: 'Mock tests & section tests', notebook: 'Personal mistake notebook', achievements: 'Your achievements', analyser: 'Quizinox Analyser', predictor: 'Quizinox Predictor', notes: 'Notes hub', vault: 'Personal knowledge vault', roadmap: 'Exam countdown roadmap', teacher: 'Teach Me Mode', debate: 'Discussion Room', studio: 'Content Creator Studio' };
 Object.assign(labels, UPSC_LABELS);
-const MORE_TABS = [...UPSC_TABS, 'create', 'ai', 'tools', 'settings', 'mocks', 'notebook', 'notes', 'vault', 'roadmap', 'teacher', 'discussion', 'creator', 'achievements', 'analyser', 'predictor'];
+const V4_TABS = ['notes', 'vault', 'roadmap', 'teacher', 'debate', 'studio'];
+const MORE_TABS = [...UPSC_TABS, ...V4_TABS, 'create', 'ai', 'tools', 'settings', 'mocks', 'notebook', 'achievements', 'analyser', 'predictor'];
 function markNav(tab) { $$('.navitem,.mobile-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab || (b.hasAttribute('data-more') && MORE_TABS.includes(tab)))); }
 function scrollTop() { window.scrollTo(0, 0); $('.main')?.scrollTo?.(0, 0); }
 const navStack = []; let navBusy = false;
@@ -184,15 +183,15 @@ $('[data-more]').addEventListener('click', () => { if (play) return toast('Finis
   { icon: '⌘', label: 'File Studio', hint: 'PDF → TXT, import, export, backup', run: () => setTab('tools') },
   { icon: '◷', label: 'Mock & Section tests', hint: 'Full mock simulator · section mode', run: () => setTab('mocks') },
   { icon: '✎', label: 'Mistake Notebook', hint: 'Wrong questions · mastered · mistake mocks', cls: 'practice-icon', run: () => setTab('notebook') },
-  { icon: '📝', label: 'Notes & Notebooks', hint: 'Nested folders · paste · import PDF/TXT · AI search', run: () => setTab('notes') },
-  { icon: '🧠', label: 'Personal Knowledge Vault', hint: 'Save facts, screenshots, explanations and difficult concepts', run: () => setTab('vault') },
-  { icon: '🗺️', label: 'Exam Countdown Roadmap', hint: 'Unlimited exams and adaptive dated task plans', run: () => setTab('roadmap') },
-  { icon: '🎓', label: 'QUIZINOX Teacher', hint: 'Personalised lessons · examples · adaptive checks', cls: 'practice-icon', run: () => setTab('teacher') },
-  { icon: '⚖️', label: 'Discussion Room', hint: 'AI debate · GD · UPSC interview · voice input', run: () => setTab('discussion') },
-  { icon: '✨', label: 'Content Creator Studio', hint: 'One PDF/source → notes · MCQs · flashcards · worksheets', run: () => setTab('creator') },
   { icon: '🏆', label: 'Achievements', hint: 'XP · streaks · badges · personal bests', run: () => setTab('achievements') },
   { icon: '🧠', label: 'Quizinox Analyser', hint: 'AI teacher that knows your history', cls: 'practice-icon', run: () => setTab('analyser') },
   { icon: '🎯', label: 'Quizinox Predictor', hint: 'Exam readiness score & range', run: () => setTab('predictor') },
+  { icon: '🗒', label: 'Notes Hub', hint: 'Paste · PDF · AI notes with nested subsections', run: () => setTab('notes') },
+  { icon: '🗄', label: 'Knowledge Vault', hint: 'Searchable library of facts & screenshots', run: () => setTab('vault') },
+  { icon: '🗓', label: 'Exam Roadmap', hint: 'Countdown + dynamic study roadmap', run: () => setTab('roadmap') },
+  { icon: '🎓', label: 'Teach Me Mode', hint: 'AI teacher for your whole journey', run: () => setTab('teacher') },
+  { icon: '⚖', label: 'Discussion Room', hint: 'Debate & discuss with AI + voice', run: () => setTab('debate') },
+  { icon: '🛠', label: 'Creator Studio', hint: 'One source → notes, MCQs, flashcards…', run: () => setTab('studio') },
   { icon: '🏛', label: 'UPSC Preparation Centre', hint: 'Syllabus · Memorisation · Flashcards · Planner · Current Affairs · Doubts', cls: 'practice-icon', run: () => actionSheet('UPSC Preparation Centre', '', UPSC_NAV.map(([k, i, l]) => ({ icon: i, label: l, hint: UPSC_LABELS[k], run: () => setTab(k) }))) },
   { icon: '⚙', label: 'Settings', hint: 'Profile, AI keys, languages, data', cls: 'practice-icon', run: () => setTab('settings') },
 ]); });
@@ -207,9 +206,7 @@ window.addEventListener('online', () => { updateNet(); toast('Back online — AI
 window.addEventListener('offline', () => { updateNet(); toast('Offline — your quizzes keep working'); });
 updateNet();
 
-function learningCtx() { return { db, save, AI, toast, confirmBox, modal, saveFile, shareFile, getJsPDF, setTab, pdfText: async file => { const m = await getPdfEngines(); const pages = await m.extractPages(file); return m.genericText(pages); } }; }
-
-function render() { if (play) { renderPlayer(); return; } const tab = db.activeTab || 'home'; markNav(tab); ({ home, quizzes: library, create: () => creator(), revision: revisionPage, search: searchPage, reports, ai: aiStudio, tools, settings, mocks: () => lazyPage('mocks'), notebook: () => lazyPage('notebook'), notes: () => renderLearningPage(view,'notes',learningCtx()), vault: () => renderLearningPage(view,'vault',learningCtx()), roadmap: () => renderLearningPage(view,'roadmap',learningCtx()), teacher: () => renderLearningPage(view,'teacher',learningCtx()), discussion: () => renderLearningPage(view,'discussion',learningCtx()), creator: () => renderLearningPage(view,'creator',learningCtx()), achievements: () => lazyPage('achievements'), analyser: () => lazyPage('analyser'), predictor: () => lazyPage('predictor'), ...Object.fromEntries(UPSC_TABS.map(k => [k, () => upscPage(k)])) }[tab] || home)(); }
+function render() { if (play) { renderPlayer(); return; } const tab = db.activeTab || 'home'; markNav(tab); ({ home, quizzes: library, create: () => creator(), revision: revisionPage, search: searchPage, reports, ai: aiStudio, tools, settings, mocks: () => lazyPage('mocks'), notebook: () => lazyPage('notebook'), achievements: () => lazyPage('achievements'), analyser: () => lazyPage('analyser'), predictor: () => lazyPage('predictor'), ...Object.fromEntries(V4_TABS.map(k => [k, () => v4Page(k)])), ...Object.fromEntries(UPSC_TABS.map(k => [k, () => upscPage(k)])) }[tab] || home)(); }
 
 /* ------------------------------ HOME ------------------------------ */
 function home() {
@@ -507,19 +504,17 @@ function renderResult(a, filter = 'all') {
   const rows = a.details.map((d, i) => ({ d, i })).filter(({ d }) => filter === 'all' || d.status === filter);
   view.innerHTML = `<div class="result-wrap"><div class="result-hero"><div class="result-ring" style="--score:${a.percent * 3.6}deg"><div><strong>${a.percent}%</strong><small>SCORE</small></div></div><div><div class="eyebrow">${passed ? '🏆 PASSED' : 'SESSION COMPLETE'}</div><h1>${passed ? 'Great work!' : 'Quiz completed!'}</h1><p>${esc(a.quizTitle)} · ${new Date(a.date).toLocaleString()}${a.durationSec ? ` · ${fmtDur(a.durationSec)}` : ''}</p></div></div>
   <div class="stats-grid result-stats"><div class="stat-card"><small>CORRECT</small><strong class="green-text">${a.correct}</strong></div><div class="stat-card"><small>INCORRECT</small><strong class="red-text">${a.wrong}</strong></div><div class="stat-card"><small>UNANSWERED</small><strong>${a.blank}</strong></div><div class="stat-card"><small>MARKS</small><strong>${a.score}/${a.total}</strong></div></div>
-  ${attemptCard(a)}${a.omr ? omrResultPanel(a) : ''}${sectionTable(a)}${perfPanel(a)}
+  ${attemptCard(a)}${sectionTable(a)}${perfPanel(a)}${a.omr ? omrExportPanel(a) : ''}
   <div class="panel artifact-panel" ${a.isRevision ? 'hidden' : ''}><div class="panel-head"><div><h3>🌐 Language & study exports</h3><p>Choose a language, then download or share each generated file directly.</p></div></div><div class="form-grid"><label>Export language<select id="artifactLang"><option value="original">Original</option></select></label><label>Translate into<select id="artifactTarget"></select></label></div><div class="dialog-actions"><button class="secondary" id="artifactTranslate">🌐 Translate / prepare language</button></div><div class="artifact-grid"><div class="artifact-item"><b>🎮 Playable HTML Quiz</b><div><button class="primary" id="downloadQuizHtml">⬇ Download HTML</button><button class="secondary" id="shareQuizHtml">↗ Share</button></div></div><div class="artifact-item"><b>📄 Test PDF</b><div><button class="primary" id="downloadTestPdf">⬇ Download PDF</button><button class="secondary" id="shareTestPdf">↗ Share</button></div></div><div class="artifact-item"><b>✅ Solution PDF</b><div><button class="primary" id="downloadSolPdf">⬇ Download PDF</button><button class="secondary" id="shareSolPdf">↗ Share</button></div></div><div class="artifact-item"><b>📚 Test + Solution PDF</b><div><button class="primary" id="downloadMergedPdf">⬇ Download PDF</button><button class="secondary" id="shareMergedPdf">↗ Share</button></div></div><div class="artifact-item"><b>📝 Notes HTML</b><div><button class="primary" id="downloadNotesHtml">⬇ Download HTML</button><button class="secondary" id="shareNotesHtml">↗ Share</button></div></div><div class="artifact-item"><b>📘 Notes PDF</b><div><button class="primary" id="downloadNotesPdf">⬇ Download PDF</button><button class="secondary" id="shareNotesPdf">↗ Share</button></div></div></div><p class="muted" id="artifactStatus">Files are saved to Downloads on web, or shared through Android's share sheet.</p><div class="dialog-actions"><button class="secondary" id="openTestMaker">Open supplied Test Series Maker</button><button class="secondary" id="openNotesMaker">Open supplied Notes Maker</button><button class="secondary" id="openQuizMaker">Open supplied Quiz Maker</button><button class="secondary" id="openTranslatorTool">Open supplied Translator</button></div></div>
   <div class="panel"><div class="panel-head"><div><h3>Answer review</h3><p>Review every response and explanation.</p></div><button class="secondary" id="resultPdf">⇩ PDF report</button></div>
   <div class="chips">${[['all', 'All', a.total], ['correct', 'Correct', a.correct], ['wrong', 'Wrong', a.wrong], ['blank', 'Unanswered', a.blank]].map(([k, l, n]) => `<button class="chip ${filter === k ? 'active' : ''}" data-filter="${k}">${l} · ${n}</button>`).join('')}</div>
-  ${rows.length ? rows.map(({ d, i }) => `<div class="review-row"><div class="review-number">${i + 1}</div><div class="review-content"><b>${escMl(d.question)}</b>${figStem(d)}<div class="review-status ${d.status}">${d.status.toUpperCase()} · ${d.selected == null ? 'Not answered' : `Your answer: ${L(idxOf(d, d.selected))}`} · Correct: ${L(idxOf(d, d.correct))}${d.timeSec ? ` · ⏱ ${d.timeSec}s` : ''}${d.topic ? ` · ${esc(d.topic)}` : ''}</div><div class="review-options">${d.options.map((o, j) => `<div class="${o.original === d.correct ? 'review-correct' : o.original === d.selected ? 'review-wrong' : ''}">${L(j)}. ${figOpt(d, o.original)}${esc(o.text)} ${o.original === d.correct ? '✓' : o.original === d.selected ? '✕' : ''}</div>`).join('')}</div>${d.explanation ? `<p class="explanation-text">${esc(explanationLines(d.explanation))}</p>` : ''}<div class="review-actions"><button class="textbtn ${isBookmarkedText(d.question) ? 'bm-on' : ''}" data-rbm="${i}">${isBookmarkedText(d.question) ? '⚑ Saved as difficult' : '⚐ Save as difficult'}</button><button class="textbtn" data-rai="${i}">✦ Ask AI</button><button class="textbtn" data-rvault="${i}">🧠 Save to Vault</button></div></div></div>`).join('') : '<div class="empty-mini"><b>Nothing here</b></div>'}</div>
+  ${rows.length ? rows.map(({ d, i }) => `<div class="review-row"><div class="review-number">${i + 1}</div><div class="review-content"><b>${escMl(d.question)}</b>${figStem(d)}<div class="review-status ${d.status}">${d.status.toUpperCase()} · ${d.selected == null ? 'Not answered' : `Your answer: ${L(idxOf(d, d.selected))}`} · Correct: ${L(idxOf(d, d.correct))}${d.timeSec ? ` · ⏱ ${d.timeSec}s` : ''}${d.topic ? ` · ${esc(d.topic)}` : ''}</div><div class="review-options">${d.options.map((o, j) => `<div class="${o.original === d.correct ? 'review-correct' : o.original === d.selected ? 'review-wrong' : ''}">${L(j)}. ${figOpt(d, o.original)}${esc(o.text)} ${o.original === d.correct ? '✓' : o.original === d.selected ? '✕' : ''}</div>`).join('')}</div>${d.explanation ? `<p class="explanation-text">${esc(explanationLines(d.explanation))}</p>` : ''}<div class="review-actions"><button class="textbtn ${isBookmarkedText(d.question) ? 'bm-on' : ''}" data-rbm="${i}">${isBookmarkedText(d.question) ? '⚑ Saved as difficult' : '⚐ Save as difficult'}</button><button class="textbtn" data-rai="${i}">✦ Ask AI</button></div></div></div>`).join('') : '<div class="empty-mini"><b>Nothing here</b></div>'}</div>
 <div class="result-actions"><button class="primary" id="resultHome">Back to dashboard</button>${a.isRevision ? '<button class="secondary" id="resultRevision">↻ Revision list</button>' : `<button class="secondary" id="resultAgain">↻ Retry quiz</button>`}</div>
 </div>`;
-  if (a.omr) { $('#exportOmrPng').onclick = () => exportOmrImage(a); $('#exportOmrPdf').onclick = () => exportOmrPdf(a); }
-  if (!a.isRevision) setupResultArtifacts(a); $('#resultHome').onclick = () => setTab('home'); $('#resultAgain')?.addEventListener('click', () => chooseMode(a.quizId)); $('#resultRevision')?.addEventListener('click', () => setTab('revision')); $('#resultPdf').onclick = () => exportAttemptPDF(a);
+  if (!a.isRevision) setupResultArtifacts(a); $('#resultHome').onclick = () => setTab('home'); $('#resultAgain')?.addEventListener('click', () => chooseMode(a.quizId)); $('#resultRevision')?.addEventListener('click', () => setTab('revision')); $('#resultPdf').onclick = () => exportAttemptPDF(a); $('#omrPng')?.addEventListener('click', () => omrExport(a, 'png')); $('#omrPdf')?.addEventListener('click', () => omrExport(a, 'pdf'));
   const quizOf = () => db.quizzes.find(q => q.id === a.quizId);
   $$('[data-rbm]').forEach(b => b.onclick = () => { const d = a.details[Number(b.dataset.rbm)]; toggleBookmark(snapFromDetail(d, quizOf())); renderResult(a, filter); });
   $$('[data-rai]').forEach(b => b.onclick = () => { const d = a.details[Number(b.dataset.rai)]; askAI({ ...snapFromDetail(d, quizOf()), selected: d.selected }); });
-  $$('[data-rvault]').forEach(b => b.onclick = () => { const d=a.details[Number(b.dataset.rvault)]; const item={id:uid(),title:`${a.quizTitle} · Q${Number(b.dataset.rvault)+1}`,kind:'difficult-concept',content:`Question: ${d.question}\nYour answer: ${d.selected==null?'Skipped':String.fromCharCode(65+idxOfOriginal(d,d.selected))}\nCorrect answer: ${String.fromCharCode(65+idxOfOriginal(d,d.correct))}\nExplanation: ${d.explanation||'No explanation supplied.'}`,tags:[d.subject||a.subject||'General',d.topic||'Difficult question'].filter(Boolean),source:`${a.quizTitle} · ${new Date(a.date).toLocaleDateString()}`,createdAt:new Date().toISOString()}; db.vault ||= []; db.vault.unshift(item); save(); toast('Saved to Personal Knowledge Vault ✓'); });
   $('#perfToReports')?.addEventListener('click', () => setTab('reports'));
   $$('[data-filter]').forEach(b => b.onclick = () => renderResult(a, b.dataset.filter));
   $('#attemptMistakes')?.addEventListener('click', () => attemptFromResult(a, ['wrong'], 'Mistakes'));
@@ -531,26 +526,6 @@ function renderResult(a, filter = 'all') {
     db.quizzes.unshift(mq); save(); toast(`${qs.length} questions saved as "${mq.title}"`); chooseMode(mq.id);
   });
 }
-
-function omrResultPanel(a) {
-  const attempted = a.correct + a.wrong;
-  const accuracy = attempted ? Math.round(a.correct / attempted * 100) : 0;
-  const negLost = a.wrong * (Number(a.negative) || 0);
-  return `<div class="panel l-omr-result"><div class="panel-head"><div><h3>▦ Detailed OMR evaluation</h3><p>Bubble-by-bubble evaluation, response status and marking breakdown.</p></div><span class="tag">OMR EVALUATED</span></div><div class="l-omr-metrics"><div><small>ATTEMPTED</small><b>${attempted}/${a.total}</b></div><div><small>ACCURACY</small><b>${accuracy}%</b></div><div><small>NEGATIVE MARKS</small><b class="red-text">−${Number(negLost.toFixed(2))}</b></div><div><small>NET SCORE</small><b>${a.score}</b></div></div><div class="l-omr-table-wrap"><table class="l-omr-table"><thead><tr><th>Q.No.</th><th>Your bubble</th><th>Correct bubble</th><th>Evaluation</th><th>Marks</th></tr></thead><tbody>${a.details.map((d,i)=>{const picked=d.selected==null?'—':String.fromCharCode(65+Math.max(0,idxOfOriginal(d,d.selected)));const correct=String.fromCharCode(65+Math.max(0,idxOfOriginal(d,d.correct)));const mark=d.status==='correct'?'+1':d.status==='wrong'?`−${Number(a.negative)||0}`:'0';return`<tr><td>${i+1}</td><td>${d.selected==null?'—':picked}</td><td>${correct}</td><td class="${d.status==='correct'?'green-text':d.status==='wrong'?'red-text':''}">${d.status.toUpperCase()}</td><td>${mark}</td></tr>`;}).join('')}</tbody></table></div><div class="l-actions"><button class="primary" id="exportOmrPng">⇩ Export OMR sheet image</button><button class="secondary" id="exportOmrPdf">⇩ Export OMR evaluation PDF</button></div><small class="muted">The image includes your marked bubbles. The PDF splits long sheets into printable pages and includes evaluation status.</small></div>`;
-}
-function idxOfOriginal(d, orig) { const i=(d.options||[]).findIndex(o=>o.original===orig); return i<0?0:i; }
-function drawOmrCanvas(a, start=0, end=a.total, compact=false) {
-  const count=Math.max(0,end-start), width=compact?900:1240, rowH=compact?27:42, head=compact?180:230, height=head+count*rowH+60;
-  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const c=canvas.getContext('2d');
-  c.fillStyle='#fff';c.fillRect(0,0,width,height);c.fillStyle='#101828';c.font=`bold ${compact?25:34}px Arial`;c.fillText('QUIZINOX · OMR ANSWER SHEET',42,55);c.font=`${compact?14:19}px Arial`;c.fillStyle='#3d4a5c';c.fillText(a.quizTitle||'Exam attempt',42,88);c.fillText(`Date: ${new Date(a.date).toLocaleString()}   |   Total: ${a.total}   |   Correct: ${a.correct}   |   Wrong: ${a.wrong}   |   Blank: ${a.blank}   |   Score: ${a.score}`,42,120);
-  c.strokeStyle='#c7d0dc';c.lineWidth=2;c.beginPath();c.moveTo(38,head-22);c.lineTo(width-38,head-22);c.stroke();
-  c.font=`bold ${compact?13:17}px Arial`;c.fillStyle='#344054';c.fillText('Q.NO.',45,head+5);c.fillText('MARK ONE RESPONSE',compact?130:175,head+5);c.fillText('RESULT',width-(compact?145:185),head+5);
-  const letters=['A','B','C','D'];
-  a.details.slice(start,end).forEach((d,k)=>{const y=head+30+k*rowH;const selected=idxOfOriginal(d,d.selected);const correct=idxOfOriginal(d,d.correct);c.strokeStyle='#e0e5ec';c.lineWidth=1;c.beginPath();c.moveTo(38,y+rowH-3);c.lineTo(width-38,y+rowH-3);c.stroke();c.fillStyle='#101828';c.font=`bold ${compact?13:17}px Arial`;c.fillText(String(start+k+1),48,y+rowH/2+5);letters.forEach((l,j)=>{const x=(compact?185:250)+j*(compact?92:132),r=compact?10:14;c.beginPath();c.arc(x,y+rowH/2,r,0,Math.PI*2);c.fillStyle='#fff';c.fill();c.strokeStyle=j===correct?'#16a36a':'#596579';c.lineWidth=j===correct?3:2;c.stroke();if(d.selected!=null&&j===selected){c.beginPath();c.arc(x,y+rowH/2,r-4,0,Math.PI*2);c.fillStyle='#243a62';c.fill();}c.fillStyle='#344054';c.font=`${compact?11:14}px Arial`;c.fillText(l,x+r+8,y+rowH/2+4);});const label=d.status==='correct'?'CORRECT':d.status==='wrong'?'WRONG':'SKIPPED';c.font=`bold ${compact?11:14}px Arial`;c.fillStyle=d.status==='correct'?'#087a4b':d.status==='wrong'?'#c0394b':'#8a6a18';c.fillText(label,width-(compact?145:185),y+rowH/2+5);});
-  c.fillStyle='#64748b';c.font=`${compact?10:13}px Arial`;c.fillText('QUIZINOX · Personal exam record · Generated on this device',42,height-22);return canvas;
-}
-async function exportOmrImage(a){try{const canvas=drawOmrCanvas(a,0,a.total,false);const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));if(!blob)throw Error('Could not render OMR image');await saveFile(`QUIZINOX-OMR-${Date.now()}.png`,blob,'image/png');toast('OMR sheet image exported ✓');}catch(e){toast(e.message||'OMR image export failed',5000);}}
-async function exportOmrPdf(a){try{const {jsPDF}=await getJsPDF();const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});const perPage=38;for(let start=0;start<a.total;start+=perPage){if(start)doc.addPage();const canvas=drawOmrCanvas(a,start,Math.min(a.total,start+perPage),true);const img=canvas.toDataURL('image/png');doc.addImage(img,'PNG',7,7,196,Math.min(283,196*canvas.height/canvas.width));doc.setFontSize(8);doc.text(`Page ${Math.floor(start/perPage)+1} · Questions ${start+1}–${Math.min(a.total,start+perPage)}`,10,292);}await saveFile(`QUIZINOX-OMR-Evaluation-${Date.now()}.pdf`,doc.output('blob'),'application/pdf');toast('OMR evaluation PDF exported ✓');}catch(e){toast(e.message||'OMR PDF export failed',5000);}}
 
 const attemptCard = a => a.isRevision ? '' : `<div class="attempt-split"><div class="eyebrow">ATTEMPT AGAIN · NEW QUIZ FROM THIS RESULT</div><div class="attempt-split-btns">${a.wrong ? `<button class="attempt-btn attempt-mistakes" id="attemptMistakes"><b>✎ ATTEMPT MISTAKES</b><small>${a.wrong} wrong question${a.wrong > 1 ? 's' : ''} as a new quiz</small></button>` : ''}${a.correct ? `<button class="attempt-btn attempt-correct" id="attemptCorrect"><b>✓ ATTEMPT CORRECT</b><small>${a.correct} correct question${a.correct > 1 ? 's' : ''} as a new quiz</small></button>` : ''}${a.wrong + a.blank ? `<button class="attempt-btn attempt-practise" id="retryWrong"><b>↻ PRACTISE MISTAKES</b><small>${a.wrong + a.blank} wrong + skipped questions</small></button>` : ''}</div></div>`;
 const sectionTable = a => a.sections?.length ? `<div class="panel"><div class="panel-head"><div><h3>Section-wise result</h3><p>${a.omr ? 'OMR evaluation · ' : ''}Marks and accuracy in every section</p></div></div><table class="x-table"><thead><tr><th>Section</th><th>Qs</th><th>✓</th><th>✕</th><th>Skipped</th><th>Marks</th><th>Accuracy</th></tr></thead><tbody>${a.sections.map(sc => `<tr><td><b>${esc(sc.name)}</b>${sc.minutes ? `<small> · ${sc.minutes} min</small>` : ''}</td><td>${sc.total}</td><td class="green-text">${sc.correct}</td><td class="red-text">${sc.wrong}</td><td>${sc.blank}</td><td>${sc.score}</td><td>${sc.correct + sc.wrong ? Math.round(sc.correct / (sc.correct + sc.wrong) * 100) : 0}%</td></tr>`).join('')}</tbody></table></div>` : '';
@@ -758,6 +733,16 @@ function lazyPage(name) {
   view.innerHTML = '<div class="empty-state"><div>⏳</div><h3>Loading…</h3></div>';
   loadExtras().then(m => { if (db.activeTab === name && !play) m.pages[name](extrasCtx()); }).catch(e => { console.error(e); extrasP = null; view.innerHTML = `<div class="empty-state"><div>⚠</div><h3>Could not load this page</h3><p>${esc(e.message)}</p></div>`; });
 }
+/* ------------------------------ v4.0 · LEARNING TOOLS PAGES ------------------------------ */
+let v4P = null; const loadV4 = () => v4P ||= import('./v4/index.js');
+const v4Ctx = () => ({
+  get db() { return db; }, view, save, $, $$, esc, escMl, md, toast, modal, confirmBox, actionSheet, setTab, uid, AI, gemini, saveFile, slug, L, parseText, parseJSON, question, quizTemplate, buildProfile, normQ, qKey, dueItems, startQuiz, chooseMode, aiGenerator, pickFile,
+  getPdfEngines: () => getPdfEngines(), getJsPDF: () => getJsPDF(),
+});
+function v4Page(name) {
+  view.innerHTML = '<div class="empty-state"><div>⏳</div><h3>Loading…</h3></div>';
+  loadV4().then(m => { if (db.activeTab === name && !play) m.pages[name](v4Ctx()); }).catch(e => { console.error(e); v4P = null; view.innerHTML = `<div class="empty-state"><div>⚠</div><h3>Could not load this page</h3><p>${esc(e.message)}</p></div>`; });
+}
 
 /* ------------------------------ REPORTS ------------------------------ */
 function reports() {
@@ -924,7 +909,7 @@ async function restoreBackup(file) {
     const b = JSON.parse(await file.text()); const d = b.data || b;
     if (!Array.isArray(d.quizzes) || !Array.isArray(d.attempts)) throw Error('Not a QUIZINOX backup file');
     actionSheet('Restore backup', `${d.quizzes.length} quizzes · ${d.attempts.length} attempts`, [
-      { icon: '⊕', label: 'Merge with current data', hint: 'Keeps your current quizzes, adds missing ones', cls: 'practice-icon', run: () => { const qIds = new Set(db.quizzes.map(q => q.id)), aIds = new Set(db.attempts.map(a => a.id)); db.quizzes.push(...d.quizzes.filter(q => !qIds.has(q.id))); db.attempts.push(...d.attempts.filter(a => !aIds.has(a.id))); for (const k of ['notes','vault','roadmaps','teacherSessions','discussions','creatorOutputs']) { const have=new Set((db[k]||[]).map(x=>x.id)); db[k] ||= []; db[k].push(...(Array.isArray(d[k])?d[k]:[]).filter(x=>x?.id&&!have.has(x.id))); } db.revision = { ...(d.revision || {}), ...db.revision }; db.bookmarks = { ...(d.bookmarks || {}), ...db.bookmarks }; if (d.upsc) db.upsc = mergeUpsc(db.upsc, d.upsc); for (const [k, v] of Object.entries(d.settings || {})) { const c = db.settings[k]; if (c == null || c === '' || (Array.isArray(c) && !c.length)) db.settings[k] = v; else if (k === 'aiKeys' && Array.isArray(v)) { const have = new Set(c.map(x => x.key)); v.forEach(x => { if (x && !have.has(x.key)) c.push(x); }); } } if (d.aiChats) { const a = db.aiChats || (db.aiChats = {}); const mg = (x, y) => { const m = new Map((x || []).map(i => [i.id, i])); (y || []).forEach(i => { if (i && !m.has(i.id)) m.set(i.id, i); }); return [...m.values()]; }; a.convs = mg(a.convs, d.aiChats.convs); a.log = mg(a.log, d.aiChats.log); a.saved = mg(a.saved, d.aiChats.saved); a.prefs = { ...(d.aiChats.prefs || {}), ...(a.prefs || {}) }; } db.attempts.sort((x, y) => String(y.date).localeCompare(String(x.date))); save(); setTab('home'); toast('Backup merged ✓'); } },
+      { icon: '⊕', label: 'Merge with current data', hint: 'Keeps your current quizzes, adds missing ones', cls: 'practice-icon', run: () => { const qIds = new Set(db.quizzes.map(q => q.id)), aIds = new Set(db.attempts.map(a => a.id)); db.quizzes.push(...d.quizzes.filter(q => !qIds.has(q.id))); db.attempts.push(...d.attempts.filter(a => !aIds.has(a.id))); db.revision = { ...(d.revision || {}), ...db.revision }; db.bookmarks = { ...(d.bookmarks || {}), ...db.bookmarks }; if (d.upsc) db.upsc = mergeUpsc(db.upsc, d.upsc); for (const [k, v] of Object.entries(d.settings || {})) { const c = db.settings[k]; if (c == null || c === '' || (Array.isArray(c) && !c.length)) db.settings[k] = v; else if (k === 'aiKeys' && Array.isArray(v)) { const have = new Set(c.map(x => x.key)); v.forEach(x => { if (x && !have.has(x.key)) c.push(x); }); } } if (d.aiChats) { const a = db.aiChats || (db.aiChats = {}); const mg = (x, y) => { const m = new Map((x || []).map(i => [i.id, i])); (y || []).forEach(i => { if (i && !m.has(i.id)) m.set(i.id, i); }); return [...m.values()]; }; a.convs = mg(a.convs, d.aiChats.convs); a.log = mg(a.log, d.aiChats.log); a.saved = mg(a.saved, d.aiChats.saved); a.prefs = { ...(d.aiChats.prefs || {}), ...(a.prefs || {}) }; } db.attempts.sort((x, y) => String(y.date).localeCompare(String(x.date))); save(); setTab('home'); toast('Backup merged ✓'); } },
       { icon: '↺', label: 'Replace everything', hint: 'Current data on this device is replaced', danger: true, cls: 'danger-icon', run: () => { const keys = db.settings.aiKeys || []; const keep = Array.isArray(d.settings?.aiKeys) && d.settings.aiKeys.length ? d.settings.aiKeys : keys; db = normalizeState({ ...d, settings: { ...(d.settings || {}), geminiKey: '', aiKeys: keep } }); if (b.aux?.aiUsage) { try { Store.setItem('quizinox_ai_usage_v2', JSON.stringify(b.aux.aiUsage)); } catch { /* */ } } save(); $('#profileName').textContent = db.settings.name || 'Learner'; setTab('home'); toast('Backup restored ✓'); } },
     ]);
   } catch (e) { toast('Backup invalid: ' + e.message); }
@@ -955,6 +940,86 @@ async function exportAttemptPDF(a) {
     w.gap(3);
   });
   saveFile(`${slug(a.quizTitle)}-result.pdf`, w.doc.output('blob'), 'application/pdf').then(r => toast(`PDF saved (${r.where}) ✓`));
+}
+/* ---------- OMR sheet: detailed evaluation + sheet export (v4) ---------- */
+const omrExportPanel = a => `<div class="panel"><div class="panel-head"><div><h3>▥ OMR evaluation sheet</h3><p>Your filled OMR sheet with every bubble marked — download as image or print-ready PDF</p></div><div class="dialog-actions" style="margin:0"><button class="secondary" id="omrPng">⬇ OMR sheet (PNG)</button><button class="primary" id="omrPdf">⇩ OMR sheet (PDF)</button></div></div>
+  <div class="omr-mini-grid">${a.details.map((d, i) => { const ok = d.status === 'correct', sel = d.selected != null; return `<div class="omr-mini ${ok ? 'ok' : d.status === 'wrong' ? 'bad' : ''}" title="Q${i + 1}">${i + 1}</div>`; }).join('')}</div>
+  <p class="muted">Green = correct · Red = wrong · Grey = unanswered. The exported sheet shows exact bubbles as filled on the OMR grid.</p></div>`;
+
+function omrSheetCanvas(a) {
+  const n = a.details.length, cols = 2;
+  const perCol = Math.ceil(n / cols) || 1;
+  const pad = 30, headerH = 132, blockH = 36, colGap = 46, colW = 260;
+  const W = pad * 2 + colW * cols + colGap, H = headerH + perCol * blockH + pad + 56;
+  const cv = document.createElement('canvas'); cv.width = W * 2; cv.height = H * 2;
+  const g = cv.getContext('2d'); g.scale(2, 2);
+  // printable light sheet
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#111'; g.lineWidth = 1.6; g.strokeRect(8, 8, W - 16, H - 16);
+  // header
+  g.fillStyle = '#111'; g.font = 'bold 17px Arial'; g.textAlign = 'center';
+  g.fillText('QUIZINOX — OMR ANSWER SHEET', W / 2, 38);
+  g.font = '11px Arial';
+  g.fillText(a.quizTitle.slice(0, 80), W / 2, 56);
+  g.textAlign = 'left'; g.font = '10px Arial';
+  const line = (label, x, y, w) => { g.fillText(label, x, y); g.strokeStyle = '#555'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x + g.measureText(label).width + 4, y); g.lineTo(x + w, y); g.stroke(); };
+  line('Name:', pad + 4, 78, 170); line('Roll No.:', pad + 200, 78, 110);
+  line('Date:', pad + 340, 78, 150);
+  g.fillStyle = '#333'; g.font = 'bold 10px Arial';
+  g.fillText(`Score: ${a.score}/${a.total} (${a.percent}%)   ✓ ${a.correct}   ✕ ${a.wrong}   Blank ${a.blank}   Time: ${fmtDur(a.durationSec || 0)}`, pad + 4, 96);
+  g.strokeStyle = '#111'; g.lineWidth = 1; g.beginPath(); g.moveTo(14, headerH - 26); g.lineTo(W - 14, headerH - 26); g.stroke();
+  g.font = 'bold 9px Arial'; g.fillStyle = '#111'; g.fillText('Q  A   B   C   D', pad + 14, headerH - 10);
+  // bubbles
+  for (let i = 0; i < n; i++) {
+    const col = Math.floor(i / perCol), row = i % perCol;
+    const x0 = pad + col * (colW + colGap), y0 = headerH + row * blockH;
+    const d = a.details[i];
+    g.fillStyle = '#111'; g.font = 'bold 10px Arial'; g.textAlign = 'left';
+    g.fillText(String(i + 1).padStart(2, '0'), x0, y0 + 14);
+    const idx = o => d.options.findIndex(t => t.original === o);
+    for (let j = 0; j < 4; j++) {
+      const cx = x0 + 34 + j * 26, cy = y0 + 10, r = 8.5;
+      const isSel = d.selected != null && idx(d.selected) === j;
+      const isCorr = idx(d.correct) === j;
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
+      if (isSel) { g.fillStyle = d.status === 'correct' ? '#15803d' : '#b91c1c'; g.fill(); g.strokeStyle = '#111'; }
+      else if (isCorr && d.status === 'wrong') { g.fillStyle = '#dcfce7'; g.fill(); g.strokeStyle = '#15803d'; }
+      else { g.fillStyle = '#fff'; g.fill(); g.strokeStyle = '#333'; }
+      g.lineWidth = isSel || isCorr ? 1.8 : 1; g.stroke();
+      g.fillStyle = isSel ? '#fff' : '#333'; g.font = 'bold 8px Arial'; g.textAlign = 'center';
+      g.fillText(L(j), cx, cy + 3);
+    }
+    // status marker
+    g.textAlign = 'left'; g.font = 'bold 9px Arial';
+    g.fillStyle = d.status === 'correct' ? '#15803d' : d.status === 'wrong' ? '#b91c1c' : '#777';
+    g.fillText(d.status === 'correct' ? '✓' : d.status === 'wrong' ? '✕' : '–', x0 + 142, y0 + 14);
+  }
+  // footer legend
+  g.textAlign = 'left'; g.font = '9px Arial'; g.fillStyle = '#444';
+  g.fillText('● Filled bubble = your answer    ✓ correct    ✕ wrong (green ring = correct option)    – unanswered', pad, H - 24);
+  g.fillText(`Generated by QUIZINOX · ${new Date(a.date).toLocaleString()}`, pad, H - 12);
+  return cv;
+}
+
+async function omrExport(a, kind) {
+  try {
+    const cv = omrSheetCanvas(a);
+    if (kind === 'png') {
+      const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+      const r = await saveFile(`${slug(a.quizTitle)}-omr-sheet.png`, blob, 'image/png');
+      toast(`OMR sheet saved (${r.where}) ✓`);
+    } else {
+      const { jsPDF } = await getJsPDF();
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+      const img = cv.toDataURL('image/jpeg', 0.92);
+      const iw = cv.width / 2, ih = cv.height / 2;
+      const scale = Math.min((pw - 40) / iw, (ph - 40) / ih);
+      pdf.addImage(img, 'JPEG', 20, 20, iw * scale, ih * scale);
+      pdf.save(`${slug(a.quizTitle)}-omr-sheet.pdf`);
+      toast('OMR sheet PDF saved ✓');
+    }
+  } catch (e) { toast('OMR export failed: ' + (e.message || e), 5000); }
 }
 async function exportQuizPDF(q) {
   const { jsPDF } = await getJsPDF();
@@ -1307,15 +1372,11 @@ function settings() {
   <div class="form-grid"><label>Preferred provider<select id="aiPrimary">${AI.DEFAULT_ORDER.map(p => `<option value="${p}" ${AI.primaryProvider() === p ? 'selected' : ''}>${esc(AI.PROVIDERS[p].name)}</option>`).join('')}</select></label><label>Preferred model<select id="aiModel"></select></label></div>
   <label>Custom model name (optional)<input id="aiCustomModel" placeholder="Type any model id — leave empty to use the list"/></label>
   <div class="title-actions row"><button class="secondary" id="fetchModels">⟳ Load all models from my key</button></div><p class="muted" id="modelStatus"></p>
-  <div class="l-ai-pool-box"><div class="ai-box-head"><b>Multi-provider API rotation</b><span class="tag">OPTIONAL</span></div>
-  <label class="check"><input type="checkbox" id="aiMultiProviderEnabled" ${st.aiMultiProviderEnabled === true ? 'checked' : ''}/> Enable rotation across multiple AI providers</label>
-  <p class="muted">Select at least two providers (for example Gemini + Groq). Each new AI job starts with the next selected provider; the answer still comes from one AI only. If that provider is busy, out of quota or unavailable, the existing fallback system tries the next selected provider when cross-provider fallback is enabled below. Your per-provider API-key rotation and quota guard remain active.</p>
-  <div class="l-ai-pool-grid">${AI.DEFAULT_ORDER.map(p => { const count = AI.keysOf(p).length; const selected = (st.aiMultiProviders || []).includes(p); return `<label class="l-ai-pool-provider"><input type="checkbox" class="ai-pool-provider" value="${p}" ${selected ? 'checked' : ''}/><span><b>${esc(AI.PROVIDERS[p].name)}</b><small>${count} key${count === 1 ? '' : 's'} added</small></span></label>`; }).join('')}</div>
-  <small class="muted">Rotation activates when at least two selected providers have usable API keys. A single response is not merged from different models: one provider answers each request; the next provider is tried only when fallback is needed.</small></div>
   <h4>Fallback order</h4><p class="muted">If the main AI fails, QUIZINOX tries these providers top to bottom (only those that have a key). Use ▲ ▼ to reorder, untick to skip one.</p>
   <div id="orderList" class="order-list"></div>
   <label class="check"><input type="checkbox" id="aiFallback" ${st.aiAutoFallback === false ? '' : 'checked'}/> If a model is busy, missing or out of quota, try the provider's other models</label>
   <label class="check"><input type="checkbox" id="aiCross" ${st.aiCross === false ? '' : 'checked'}/> If every key of a provider fails, continue the job on the next provider</label>
+  <label class="check"><input type="checkbox" id="aiPool" ${st.aiPool !== false ? 'checked' : ''}/> <b>Multi-AI pool rotation</b> — rotate every AI request across ALL enabled providers &amp; their keys (Gemini + Groq + … ek saath). Off = main AI first, others only as fallback</label>
   <label class="check"><input type="checkbox" id="aiGuard" ${st.aiGuard === false ? '' : 'checked'}/> Free-tier guard — stay under ${Math.round(AI.SAFETY * 100)}% of the published free limits (paid Gemini keys skip it)</label>
   <div class="form-grid"><label>AI Study Analyst runs per day<select id="analystDaily">${[2, 3, 5, 10, 20].map(n => `<option ${Number(st.analystDaily) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>AI answer language<select id="tutorLangSet">${['English', 'Hindi', 'Hinglish'].map(l => `<option ${st.tutorLang === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
   <button class="secondary" id="saveAi">Save AI settings</button>
@@ -1376,7 +1437,7 @@ function settings() {
   $('#puterIn').onclick = async () => { const b = $('#puterIn'); b.disabled = true; b.textContent = 'Opening…'; try { const ok = await AI.puterSignIn(); toast(ok ? 'Signed in to Puter ✓' : 'Sign-in was not completed', 4000); } catch (e) { toast('✕ ' + (e.message || 'Sign-in failed') + ' — if no window opened, use API keys on this device.', 6000); } finally { b.disabled = false; b.textContent = 'Sign in with Puter'; puterUi(); } };
   $('#puterOut').onclick = async () => { await AI.puterSignOut(); puterUi(); toast('Signed out'); };
   $('#puterTest').onclick = async () => { const b = $('#puterTest'); b.textContent = '…'; try { const r = await AI.testPuter(); toast(r.ok ? 'Puter login works ✓' : '✕ ' + r.message, 4500); } catch (e) { toast('✕ ' + e.message, 4500); } finally { b.textContent = 'Test'; puterUi(); } };
-  $('#saveAi').onclick = () => { const prov = $('#aiPrimary').value, custom = $('#aiCustomModel').value.trim(), chosen = custom || $('#aiModel').value; st.aiPrimary = prov; st.aiModels = { ...(st.aiModels || {}), [prov]: chosen }; if (prov === 'gemini' && chosen) st.aiModel = chosen; st.aiMode = $('#aiMode').value; st.aiAutoFallback = $('#aiFallback').checked; st.aiCross = $('#aiCross').checked; st.aiMultiProviderEnabled = $('#aiMultiProviderEnabled').checked; st.aiMultiProviders = $$('.ai-pool-provider:checked').map(x => x.value); st.aiGuard = $('#aiGuard').checked; st.puterModel = $('#puterCustom').value.trim() || $('#puterModel').value; st.analystDaily = Number($('#analystDaily').value) || 5; st.tutorLang = $('#tutorLangSet').value; if (!st.customBaseUrl && $('#customBase').value.trim()) st.customBaseUrl = $('#customBase').value.trim(); save(); renderKeys(); toast('AI settings saved ✓'); };
+  $('#saveAi').onclick = () => { const prov = $('#aiPrimary').value, custom = $('#aiCustomModel').value.trim(), chosen = custom || $('#aiModel').value; st.aiPrimary = prov; st.aiModels = { ...(st.aiModels || {}), [prov]: chosen }; if (prov === 'gemini' && chosen) st.aiModel = chosen; st.aiMode = $('#aiMode').value; st.aiAutoFallback = $('#aiFallback').checked; st.aiCross = $('#aiCross').checked; st.aiGuard = $('#aiGuard').checked; st.aiPool = $('#aiPool').checked; st.puterModel = $('#puterCustom').value.trim() || $('#puterModel').value; st.analystDaily = Number($('#analystDaily').value) || 5; st.tutorLang = $('#tutorLangSet').value; if (!st.customBaseUrl && $('#customBase').value.trim()) st.customBaseUrl = $('#customBase').value.trim(); save(); renderKeys(); toast('AI settings saved ✓'); };
   $('#saveLangs').onclick = () => { const picks = [...new Set([1, 2, 3, 4, 5, 6, 7, 8].map(n => $('#lang' + n + 'Set')?.value).filter(Boolean))]; st.langs = picks.length ? picks : ['original']; st.langMode = $('#langModeSet').value === 'multi' && picks.length > 1 ? 'multi' : 'single'; save(); toast('Language preference saved ✓'); };
   $('#saveProfile').onclick = () => { st.name = $('#userName').value.trim() || 'Learner'; $('#profileName').textContent = st.name; save(); toast('Profile updated'); };
   Store.estimate().then(e => { const info = $('#storageInfo'), bar = $('#storageBarFill'); if (!e || !info || Store.engine() !== 'indexeddb') return; const free = Math.max(0, e.quotaMB - e.usedMB); const fmt = mb => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`; bar.style.width = `${Math.min(100, Math.max(1, e.usedMB / e.quotaMB * 100)).toFixed(1)}%`; info.textContent = `Large storage active — no 5 MB limit · about ${fmt(free)} of space still available for quizzes`; });

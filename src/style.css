@@ -487,3 +487,9 @@ body.in-quiz .back-btn{display:none}
   .omr-v-split .omr-note{display:none}
   .omr-v-split .omr-paper{padding:10px}.omr-v-split .omr-sheet{padding:8px}
 }
+
+/* v4.0 OMR evaluation sheet */
+.omr-mini-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(30px,1fr));gap:5px;margin-top:10px}
+.omr-mini{aspect-ratio:1;border-radius:7px;background:#263a5c;color:#aac3ff;display:grid;place-items:center;font-size:10px;font-weight:700}
+.omr-mini.ok{background:#173f2f;color:#68dcae;border:1px solid #2c6a4e}
+.omr-mini.bad{background:#47242b;color:#ff8493;border:1px solid #6e3742}
