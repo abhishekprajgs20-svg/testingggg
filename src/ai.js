@@ -391,10 +391,23 @@ function send(provider, key, model, prompt, o) {
 function keyCandidates(provider) { if (provider === 'web') return [{ id: 'web', label: 'Web chat', key: 'web', provider: 'web' }]; return provider === 'puter' ? [{ id: 'puter', label: 'Puter login', key: 'puter', provider: 'puter' }] : keysOf(provider).filter(usable); }
 function buildRoutes(preferModel) {
   const s = S(); const mode = s.aiMode || 'auto'; const src = aiSource(); const routes = []; const seen = new Set();
+  const configuredPool = Array.isArray(s.aiMultiProviders) ? [...new Set(s.aiMultiProviders)].filter(p => PROVIDERS[p] && providerEnabled(p) && keyCandidates(p).length) : [];
+  const multiPoolActive = s.aiMultiProviderEnabled === true && mode !== 'login' && configuredPool.length >= 2;
   const add = (provider, model) => { const id = provider + '|' + model; if (!seen.has(id) && routes.length < MAX_ROUTES) { seen.add(id); routes.push({ provider, model }); } };
   const addApi = () => {
-    const order = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && keyCandidates(p).length);
-    const list = s.aiCross === false ? order.slice(0, 1) : order;
+    const allOrder = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && keyCandidates(p).length);
+    let list = s.aiCross === false ? allOrder.slice(0, 1) : allOrder;
+    // Optional multi-provider pool: rotate the first provider for every new AI job,
+    // while retaining the existing per-key least-used rotation and error fallbacks.
+    const selected = configuredPool;
+    if (multiPoolActive) {
+      const start = Math.max(0, Number(s.aiProviderCursor) || 0) % selected.length;
+      const rotated = selected.slice(start).concat(selected.slice(0, start));
+      s.aiProviderCursor = (start + 1) % selected.length;
+      try { ctx.saveSettings(); } catch { /* provider rotation must not break the request */ }
+      const extraFallbacks = s.aiCross === false ? [] : allOrder.filter(p => !selected.includes(p));
+      list = s.aiCross === false ? rotated.slice(0, 1) : [...rotated, ...extraFallbacks];
+    }
     list.forEach((p, i) => {
       const P = PROVIDERS[p]; const first = (i === 0 && preferModel) || selectedModel(p);
       if (first) add(p, first);
@@ -405,12 +418,13 @@ function buildRoutes(preferModel) {
   const addLogin = () => { if (puterLinked()) activeLogins().forEach(id => add('puter', loginModel(id))); };
   if (src === 'login') addLogin();
   else if (src === 'api') addApi();
-  else if (src === 'login-api') { addLogin(); addApi(); }
+  else if (src === 'login-api') { if (multiPoolActive) { addApi(); addLogin(); } else { addLogin(); addApi(); } }
   else if (src === 'api-login') { addApi(); addLogin(); }
   else if (src === 'web') add('web', webSite().id);
-  else { // 'default' — exactly the v2.7 behaviour
-    if (mode !== 'api' && puterLinked()) add('puter', s.puterModel || '');
-    if (mode !== 'login') addApi();
+  else { // 'default' — legacy order is unchanged unless the optional multi-provider API pool is active
+    if (multiPoolActive && mode !== 'login') addApi();
+    if (mode !== 'api' && !multiPoolActive && puterLinked()) add('puter', s.puterModel || '');
+    if (mode !== 'login' && !multiPoolActive) addApi();
   }
   return routes;
 }

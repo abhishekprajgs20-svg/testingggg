@@ -56,6 +56,17 @@ ipcMain.handle('quizinox:fetch-text', async (_e, url) => {
 });
 
 app.whenReady().then(() => {
+  // Allow microphone access only for the local QUIZINOX app window (voice discussion / dictation).
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
+    const ownApp = /^file:\/\//i.test(webContents.getURL());
+    const audioOnly = Array.isArray(details.mediaTypes) && details.mediaTypes.includes('audio') && !details.mediaTypes.includes('video');
+    if (permission === 'media' && ownApp && audioOnly) return callback(true);
+    return callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const ownApp = /^file:\/\//i.test(webContents?.getURL?.() || '');
+    return permission === 'media' && ownApp;
+  });
   // Keep generated exports easy to find on Windows.
   session.defaultSession.on('will-download', (_event, item) => {
     item.setSavePath(uniqueDownloadPath(item.getFilename()));
