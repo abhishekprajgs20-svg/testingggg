@@ -56,6 +56,9 @@ ipcMain.handle('quizinox:fetch-text', async (_e, url) => {
 });
 
 app.whenReady().then(() => {
+  // Voice input: allow the microphone (and nothing else) for the app window.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => cb(permission === 'media' && (!details || !details.mediaTypes || details.mediaTypes.every(t => t === 'audio'))));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
   // Keep generated exports easy to find on Windows.
   session.defaultSession.on('will-download', (_event, item) => {
     item.setSavePath(uniqueDownloadPath(item.getFilename()));

@@ -5,6 +5,7 @@
 // - History: every conversation is saved per section (new / open / delete / clear); other AI answers in the app are logged too.
 // Uses the existing AI engine and keys only — no separate settings.
 import { RESPONSE_MODES, LENGTHS } from './ai-modes.js';
+import { attachMic } from './voice.js';
 let X = null, panel = null, st = { tab: 'home', view: 'chat', convId: '', mode: 'detailed', length: 'normal', lang: 'English', useCtx: true, busy: false, filter: '' };
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -47,16 +48,16 @@ const SECTIONS = {
   flash: { ctx: () => upscCtx('flash'), q: ['How can I make better flashcards?', 'Which decks should I create for UPSC?', 'Review my study routine for cards'] },
   planner: { ctx: () => upscCtx('planner'), q: ['Is my plan realistic? What should I change?', 'Rebalance my week', 'What should I add or remove?'] },
   ca: { ctx: () => upscCtx('ca'), q: ['Summarise today\'s headlines for UPSC', 'Link these headlines to the syllabus', 'What current-affairs sources should I add?'] },
+  notes: { ctx: () => `Notes: ${(X.db.studio?.notes?.items || []).length} notes. Titles: ${(X.db.studio?.notes?.items || []).slice(0, 15).map(n => n.title).join('; ')}`, q: ['How should I organise my notes?', 'Which topics are missing from my notes?', 'Suggest books/resources to add'] },
+  vault: { ctx: () => `Vault: ${(X.db.studio?.vault?.items || []).length} items. Recent: ${(X.db.studio?.vault?.items || []).slice(0, 10).map(n => n.title).join('; ')}`, q: ['What should I save in my vault?', 'Make a revision plan for my difficult concepts'] },
+  teach: { ctx: () => `Teach Me sessions: ${(X.db.studio?.teach?.sessions || []).slice(0, 8).map(s => s.topic + ' ' + s.score + '%').join('; ') || 'none'}. ${perf()}`, q: ['Which concept should I learn next?', 'Why do I keep missing these concepts?'] },
+  roadmap: { ctx: () => `Dates: ${(X.db.studio?.roadmap?.events || []).map(e => e.name + ' ' + e.date).join('; ') || 'none'}. ${upscCtx('roadmap')}`, q: ['Is my exam roadmap realistic?', 'What should I prioritise in the remaining days?', 'Which books or resources should I add?'] },
+  debate: { ctx: () => `Discussion sessions: ${(X.db.studio?.debate?.sessions || []).slice(0, 6).map(s => s.topic).join('; ') || 'none'}`, q: ['Give me topics for UPSC essay practice', 'How can I improve my argument quality?'] },
+  studio: { ctx: () => `Content Studio sources: ${(X.db.studio?.content?.sources || []).map(s => s.name).join('; ') || 'none'}; outputs: ${(X.db.studio?.content?.outputs || []).length}`, q: ['Which outputs should I create from my document?', 'How do I turn a PDF into a good test series?'] },
   doubt: { ctx: () => upscCtx('doubt'), q: ['Explain a concept I am stuck on'] },
-  notes: { ctx: () => `Notes Hub: ${(X.db.notesHub?.root || []).length} top-level sections. ${perf()}`, q: ['Organise my notes better', 'What notes should I create for my weak topics?', 'Summarise my revision priorities'] },
-  vault: { ctx: () => `Knowledge Vault: ${(X.db.vault?.items || []).length} saved items. ${perf()}`, q: ['Quiz me from my vault facts', 'What should I add to my vault?', 'Make a revision plan from my saved items'] },
-  roadmap: { ctx: () => `Exam Roadmap: ${(X.db.roadmap?.exams || []).map(e => `${e.name} on ${e.date}`).join('; ') || 'no exams added yet'}. ${perf()}`, q: ['How should I split my time between my exams?', 'Is my roadmap realistic?', 'What should I study this week?'] },
-  teacher: { ctx: perf, q: ['What topic should I learn next?', 'Which of my weak concepts needs teaching first?'] },
-  debate: { ctx: perf, q: ['Give me good debate topics for UPSC', 'How do I structure a strong argument?', 'Tips to improve my analytical answers'] },
-  studio: { ctx: () => `Creator Studio projects: ${(X.db.studio?.projects || []).length}. Quizzes: ${X.db.quizzes.length}.`, q: ['What content should I create from my study material?', 'Convert my notes into practice questions', 'Plan a worksheet for my weak topics'] },
 };
 const secOf = tab => SECTIONS[tab] || { ctx: perf, q: ['What can you help me with here?', 'Suggest what I should do next'] };
-const labelOf = tab => ({ home: 'Home', quizzes: 'Quiz library', create: 'Create quiz', revision: 'Revision', search: 'Question search', reports: 'Analytics', mocks: 'Mock & Sections', notebook: 'Mistake Notebook', achievements: 'Achievements', analyser: 'Analyser', predictor: 'Predictor', ai: 'AI Studio', tools: 'File Studio', settings: 'Settings', upsc: 'UPSC Overview', syllabus: 'Syllabus Tracker', memlab: 'Memorisation Lab', flash: 'Flashcards', planner: 'Study Planner', ca: 'Current Affairs', doubt: 'Doubt Solver', notes: 'Notes Hub', vault: 'Knowledge Vault', roadmap: 'Exam Roadmap', teacher: 'Teach Me Mode', debate: 'Discussion Room', studio: 'Creator Studio' }[tab] || tab);
+const labelOf = tab => ({ notes: 'Notes', vault: 'Knowledge Vault', teach: 'QUIZINOX Teacher', roadmap: 'Exam Roadmap', debate: 'Discussion Room', studio: 'Content Studio', home: 'Home', quizzes: 'Quiz library', create: 'Create quiz', revision: 'Revision', search: 'Question search', reports: 'Analytics', mocks: 'Mock & Sections', notebook: 'Mistake Notebook', achievements: 'Achievements', analyser: 'Analyser', predictor: 'Predictor', ai: 'AI Studio', tools: 'File Studio', settings: 'Settings', upsc: 'UPSC Overview', syllabus: 'Syllabus Tracker', memlab: 'Memorisation Lab', flash: 'Flashcards', planner: 'Study Planner', ca: 'Current Affairs', doubt: 'Doubt Solver' }[tab] || tab);
 
 /** Shared prompt builder (also used by the AI Studio doubt box). */
 export function answerPrompt({ q, mode = 'detailed', length = 'normal', lang = 'English', context = '', history = '' }) {
@@ -124,7 +125,7 @@ async function send(text, regen = false) {
   catch (e) { c.msgs.push({ role: 'ai', err: true, text: e.code === 'abort' ? 'Stopped.' : e.message }); }
   st.busy = false; abort = null; X.save(); if (panel) draw();
 }
-function mic(btn, inp) { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { btn.disabled = true; btn.title = 'Voice input is not supported here'; return; } let rec = null; btn.onclick = () => { if (rec) { rec.stop(); return; } rec = new SR(); rec.lang = st.lang === 'Hindi' ? 'hi-IN' : 'en-IN'; rec.onresult = e => { inp.value += (inp.value ? ' ' : '') + [...e.results].map(r => r[0].transcript).join(' '); inp.oninput(); }; rec.onerror = e => X.toast(e.error === 'not-allowed' ? 'Microphone permission denied' : 'Voice input failed'); rec.onend = () => { rec = null; btn.textContent = '🎤'; }; btn.textContent = '⏹'; try { rec.start(); } catch { rec = null; btn.textContent = '🎤'; } }; }
+function mic(btn, inp) { attachMic(btn, inp, { AI: X.AI, toast: X.toast, lang: () => st.lang }); }
 /* ---------- history ---------- */
 const when = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 function drawHistory(sheet) {

@@ -142,9 +142,6 @@ export function providerOrder() {
   return o;
 }
 export const providerEnabled = p => S().aiDisabled?.[p] !== true;
-/** v4.0 — Multi-AI pool rotation: when ON, every AI request rotates across ALL enabled
- *  providers and ALL their keys (fair round-robin), instead of exhausting one provider first. */
-export const poolMode = () => S().aiPool !== false;
 export function getKeys() { return (S().aiKeys || []).filter(k => k && k.key); }
 export const keysOf = p => getKeys().filter(k => providerOf(k) === p);
 const usable = k => k.enabled !== false && k.status !== 'invalid';
@@ -391,11 +388,36 @@ function send(provider, key, model, prompt, o) {
 }
 
 /* ---------------- route planning ---------------- */
+
+/* ---- v3.2: multi-AI rotation helpers ---- */
+export const multiOn = () => S().aiMulti === true;
+/** Providers the user ticked for rotation that currently have at least one usable key. */
+export function multiProviders() {
+  if (S().aiMulti !== true) return [];
+  return (S().aiMultiProviders || []).filter(p => PROVIDERS[p] && providerEnabled(p) && keysOf(p).filter(usable).length);
+}
+let rrTick = 0;
+/** Orders providers by how lightly their keys have been used (average requests per ready key); ties alternate. */
+function rankByLoad(list, preferModel) {
+  rrTick++;
+  const load = p => { const m = selectedModel(p); const ready = keysOf(p).filter(usable).map(k => keyAvailability(k, m)).filter(a => a.ok); if (!ready.length) return Infinity; return ready.reduce((n, a) => n + a.used, 0) / ready.length; };
+  return list.map((p, i) => ({ p, l: load(p), t: (i + rrTick) % list.length })).sort((a, b) => (a.l === b.l ? a.t - b.t : a.l - b.l)).map(x => x.p);
+}
 function keyCandidates(provider) { if (provider === 'web') return [{ id: 'web', label: 'Web chat', key: 'web', provider: 'web' }]; return provider === 'puter' ? [{ id: 'puter', label: 'Puter login', key: 'puter', provider: 'puter' }] : keysOf(provider).filter(usable); }
 function buildRoutes(preferModel) {
   const s = S(); const mode = s.aiMode || 'auto'; const src = aiSource(); const routes = []; const seen = new Set();
   const add = (provider, model) => { const id = provider + '|' + model; if (!seen.has(id) && routes.length < MAX_ROUTES) { seen.add(id); routes.push({ provider, model }); } };
   const addApi = () => {
+    // v3.2 multi-AI rotation: several providers share the load. Each request starts on the selected provider whose keys have been used
+    // least so far (so Gemini and Groq keys alternate); the answer still comes from ONE AI, and if it fails the next selected AI takes over.
+    const multi = multiProviders();
+    if (multi.length >= 2) {
+      const ranked = rankByLoad(multi, preferModel);
+      ranked.forEach((p, i) => { const first = (i === 0 && preferModel && p === ranked[0]) ? preferModel : selectedModel(p); if (first) add(p, first); });
+      if (s.aiAutoFallback !== false) ranked.forEach(p => PROVIDERS[p].chain.forEach(mm => add(p, mm)));
+      if (s.aiCross !== false) [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => !multi.includes(p) && providerEnabled(p) && keyCandidates(p).length).forEach(p => { const f = selectedModel(p); if (f) add(p, f); if (s.aiAutoFallback !== false) PROVIDERS[p].chain.forEach(mm => add(p, mm)); });
+      return;
+    }
     const order = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && keyCandidates(p).length);
     const list = s.aiCross === false ? order.slice(0, 1) : order;
     list.forEach((p, i) => {
@@ -418,30 +440,6 @@ function buildRoutes(preferModel) {
   return routes;
 }
 
-/* ---------------- v4.0 — Multi-AI pool rotation ---------------- */
-/** Flat per-key routes across every enabled API provider (one route per usable key). */
-function buildPoolRoutes(preferModel) {
-  const s = S(); const out = [];
-  let provs = [primaryProvider(), ...providerOrder()].filter((p, i, a) => a.indexOf(p) === i).filter(p => providerEnabled(p) && PROVIDERS[p] && keysOf(p).some(usable));
-  if (s.aiCross === false) provs = provs.slice(0, 1); // pool still honours "no cross-provider"
-  for (const p of provs) {
-    const m = (p === provs[0] && preferModel) || selectedModel(p) || PROVIDERS[p].chain?.[0];
-    if (!m) continue;
-    const keys = keysOf(p).filter(usable)
-      .map(k => ({ k, used: keyAvailability(k, m).used }))
-      .sort((a, b) => a.used - b.used);
-    for (const { k } of keys) if (out.length < MAX_ROUTES) out.push({ provider: p, model: m, key: k.id });
-  }
-  return out;
-}
-/** Rotate the pool so each new request starts at the next key/provider (persisted cursor). */
-function rotatePool(routes) {
-  if (routes.length < 2) return routes;
-  const s = S(); const cur = (Number(s.aiPoolCursor) || 0) % routes.length;
-  s.aiPoolCursor = cur + 1; ctx.saveSettings();
-  return routes.slice(cur).concat(routes.slice(0, cur));
-}
-
 /**
  * Main entry. Returns { text, model, provider, keyLabel, truncated }.
  * opts: json, maxTokens, temperature, model (preferred for the first provider), signal, onStatus(msg), system
@@ -451,28 +449,14 @@ async function aiCallCore(prompt, opts = {}) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) throw new AIError('No internet connection. AI needs internet — all offline features still work.', 'offline');
   const mode = S().aiMode || 'auto';
   if (!aiReady()) throw new AIError(aiSource() === 'login' ? 'Sign in to Puter and switch on at least one AI account in Settings → AI accounts.' : aiSource() === 'login-api' || aiSource() === 'api-login' ? 'Add an AI API key or sign in (Settings → AI accounts) first.' : mode === 'login' ? 'Sign in to Puter in Settings → AI, or switch to "API keys".' : 'Add an AI API key (or sign in) in Settings → AI.', 'nokey');
-  let routes = buildRoutes(model);
-  if (poolMode()) {
-    // v4.0 pool rotation: replace per-provider key rotation with one flat route per key,
-    // spanning ALL enabled providers, then rotate the starting point per request.
-    const poolByProv = new Map();
-    for (const r of buildPoolRoutes(model)) { const a = poolByProv.get(r.provider) || []; a.push(r); poolByProv.set(r.provider, a); }
-    if (poolByProv.size) {
-      const out = []; const put = new Set();
-      for (const r of routes) {
-        if (poolByProv.has(r.provider)) { if (!put.has(r.provider)) { put.add(r.provider); out.push(...poolByProv.get(r.provider)); } }
-        else out.push(r);
-      }
-      if (out.length) routes = rotatePool(out);
-    }
-  }
+  const routes = buildRoutes(model);
   if (!routes.length) throw new AIError('No AI provider is enabled. Check Settings → AI.', 'nokey');
   const st = { lastErr: null, sawLimit: false, minWait: Infinity, tried: 0 };
   const o = { json, maxTokens, temperature, signal, system };
 
   const runRoute = async (route, allowWait) => {
     const { provider, model: m } = route; const P = provider === 'puter' ? { name: 'Login account', kind: 'puter' } : provider === 'web' ? { name: 'Web chat', kind: 'web' } : PROVIDERS[provider];
-    const cands = route.key ? keyCandidates(provider).filter(k => k.id === route.key) : keyCandidates(provider); if (!cands.length) return null;
+    const cands = keyCandidates(provider); if (!cands.length) return null;
     let overload = 0, guard = 0;
     while (guard++ < cands.length * 3 + 6) {
       if (signal?.aborted) throw new AIError('Cancelled', 'abort');
@@ -630,3 +614,33 @@ export async function aiCall(prompt, opts = {}) {
   try { aiLogger && aiLogger(prompt, r, opts); } catch { /* logging must never break an AI call */ }
   return r;
 }
+
+/* v3.2 — speech to text for voice input (works in Android WebView + Electron where the browser speech API is missing).
+   Uses the keys already configured in Settings: Gemini (audio understanding) first, then Groq Whisper. */
+const blobB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('Could not read the recording')); r.readAsDataURL(blob); });
+export function canTranscribe() { return keysOf('gemini').length > 0 || keysOf('groq').length > 0; }
+export async function aiTranscribe(blob, { lang = 'English', signal } = {}) {
+  if (!blob || blob.size < 800) throw new AIError('The recording was too short — hold on a little longer and speak clearly.', 'short');
+  const mime = (blob.type || 'audio/webm').split(';')[0]; let lastErr = null;
+  const gem = keysOf('gemini'); const sel = safeSel('gemini'); const models = [...new Set([sel && !/^gemma/i.test(sel) ? sel : null, 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].filter(Boolean))];
+  if (gem.length) {
+    const data = await blobB64(blob);
+    for (const k of gem) for (const model of models) {
+      try {
+        const payload = { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data } }, { text: `Transcribe this speech exactly as spoken (${lang}). Output ONLY the transcript text, no commentary. If Hindi is spoken, write it in Devanagari unless the speaker clearly mixes English words.` }] }], generationConfig: { temperature: 0, maxOutputTokens: 1500 } };
+        const { res, body } = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k.key }, body: JSON.stringify(payload) }, signal);
+        if (res.ok) { const t = (body?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim(); if (t) return t; lastErr = new AIError('No speech was detected in the recording.', 'empty'); break; }
+        lastErr = new AIError(errMessage(body, `Error ${res.status}`), 'http'); if (res.status === 429 || res.status === 400) break;
+      } catch (e) { if (e.code === 'abort') throw e; lastErr = e; }
+    }
+  }
+  for (const k of keysOf('groq')) {
+    try {
+      const fd = new FormData(); fd.append('file', blob, 'speech.' + (mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm')); fd.append('model', 'whisper-large-v3-turbo'); fd.append('response_format', 'json'); if (/hindi/i.test(lang)) fd.append('language', 'hi');
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: `Bearer ${k.key}` }, body: fd, signal }); const body = await res.json().catch(() => null);
+      if (res.ok && body?.text?.trim()) return body.text.trim(); lastErr = new AIError(errMessage(body, `Error ${res.status}`), 'http');
+    } catch (e) { if (e.code === 'abort' || e.name === 'AbortError') throw new AIError('Cancelled', 'abort'); lastErr = e; }
+  }
+  throw lastErr || new AIError('Voice typing needs a Gemini or Groq API key (Settings → AI). Your keys are used only for the transcription.', 'nokey');
+}
+function safeSel(p) { try { return selectedModel(p); } catch { return ''; } }

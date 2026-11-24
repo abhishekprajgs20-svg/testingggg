@@ -36,6 +36,12 @@ jobs:
       - name: Create Android project
         run: npx cap add android
 
+      - name: Add microphone permission (voice input)
+        run: |
+          f=android/app/src/main/AndroidManifest.xml
+          grep -q RECORD_AUDIO "$f" || sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />#' "$f"
+          grep -n "RECORD_AUDIO" "$f"
+
       - name: Sync Capacitor
         run: npx cap sync android
 

@@ -221,3 +221,20 @@ A new sidebar group (and a "UPSC Preparation Centre" entry in the mobile **More*
 9. **OMR layout**: the question paper and the OMR sheet scroll independently — the sheet stays fixed. Phones get a split view (paper above, sheet below) with a switch for paper-only / sheet-only.
 10. **Backup includes AI data**: API keys, provider/model preferences, AI history (choose "with keys" or "without keys" when exporting). Restore/merge brings them back.
 11. **AI history everywhere**: every assistant chat is saved per section (new / open / delete / clear); other AI answers in the app (tutor, doubt box…) are logged under History → "Other AI answers"; ★ Save keeps favourites.
+
+
+## QUIZINOX 3.2.0 — Study Suite
+New sidebar group **STUDY SUITE** (also in the mobile More menu). The UPSC overview block was removed from the Home screen (the UPSC Preparation Centre pages themselves are unchanged).
+
+| Page | What it does |
+|---|---|
+| **Notes** | Notebooks → sections → sub-sections, unlimited depth. Paste, import PDF/TXT, ✦ AI research (writes notes + sub-notes from AI knowledge — verify facts), AI summarise / expand / simplify / organise into sub-notes, flashcards, quiz, AI chat about the note, voice typing, move/duplicate/pin, export |
+| **Knowledge Vault** | Facts, explanations, notes, difficult concepts, mistakes and **screenshots** in one searchable library (paste images with Ctrl+V), tags/subject/difficulty/favourites, spaced review reminders, AI explain/simplify/auto-tag, practice questions, flashcards |
+| **QUIZINOX Teacher** | Teach Me mode: concept → example → 3–5 questions → understanding check; re-explains wrong answers, adapts level (Zero → Expert) from your quiz history, mistakes and past sessions; weak-concept tracking and a learning-journey report |
+| **Exam Roadmap** | Unlimited exams/dates with countdown; dynamic phase roadmap (syllabus → revision → practice → mocks → final) that re-divides the remaining days as you complete tasks; own checklists; send phase tasks to the Study Planner |
+| **Discussion Room** | Debate with AI, Group Discussion, UPSC Interview, Pros & Cons, Ethical Dilemma, Mains Answer discussion; live AI-Judge scores, final judge rationale (logic, evidence, rebuttal, factual accuracy…); type or **speak**, optional read-aloud |
+| **Content Studio** | One source → notes, facts, MCQs, flashcards, statement questions, revision sheet, worksheet, question paper, mock test, presentation, topic-wise material. Pipeline with progress log; every output linked to its source; edit, regenerate, convert, export (TXT/MD/HTML/PDF/JSON, slideshow HTML) |
+
+Also new in 3.2: **detailed OMR evaluation** after submission (stats, question-wise table, evaluated / as-submitted OMR sheet as PNG or PDF, full-evaluation PDF); **multi-AI rotation** (Settings → AI → "Use several AIs together"): tick Gemini + Groq (etc.) and requests rotate across the keys of all ticked AIs (the answer still comes from one AI; automatic fallback and the per-key rotation are unchanged; switch off for the old behaviour).
+
+**Voice input** (everywhere a 🎤 appears): Chrome-type browsers use the built-in speech API; Android and Windows apps record the microphone and transcribe with your own Gemini or Groq key. Android: the CI workflow now adds the RECORD_AUDIO permission to the manifest (the app asks on first use). Windows: the microphone is allowed for the app window only.

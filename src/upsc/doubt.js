@@ -1,4 +1,5 @@
 // QUIZINOX AI — personal UPSC doubt solver. Uses the app's existing AI engine; no separate keys or settings.
+import { attachMic } from '../voice.js';
 import { C, setC, esc, $, $$, sub, stats, persist, head, ui, uid, ask, hasAI, SYSTEM_UPSC, toast, mdx, recentMistakes, tabsHtml } from './core.js';
 const D = () => sub('doubt', { convs: [], active: '', mode: 'simple' });
 export const MODES = { simple: ['Explain Simply', 'Explain in simple language for a beginner, with a one-line summary at the end.'], detailed: ['Detailed Explanation', 'Give a detailed, well-structured explanation.'], prelims: ['Prelims Perspective', 'Focus on facts, traps, keywords and how MCQs are framed. Include a few likely statement-style pointers.'], mains: ['Mains Perspective', 'Give a Mains-style answer: introduction, multi-dimensional body, examples, way forward.'], concept: ['Conceptual Explanation', 'Explain the underlying concept, logic and linkages.'], compare: ['Compare Two Concepts', 'Compare the two concepts in a Markdown table, then give key differences and when each applies.'], examples: ['Explain with Examples', 'Explain using concrete Indian examples and case studies.'], timeline: ['Explain with Timeline', 'Present a chronological timeline of key events with years, then brief significance. Only include dates you are sure of.'], table: ['Explain with Table', 'Organise the answer in Markdown table(s).'], notes: ['Create Short Revision Notes', 'Produce crisp revision notes: bullet points, key terms in bold, a "Remember" box at the end.'] };
@@ -30,10 +31,7 @@ function wire() {
   $$('[data-rg]').forEach(b => b.onclick = () => { const i = +b.dataset.rg; const q = [...c.msgs.slice(0, i)].reverse().find(m => m.role === 'user'); if (!q) return; c.msgs = c.msgs.slice(0, i); persist(); run(q.text); });
   $$('[data-fc]').forEach(b => b.onclick = async () => { const i = +b.dataset.fc; const q = [...c.msgs.slice(0, i)].reverse().find(m => m.role === 'user'); const { addCardsToDeck } = await import('./flash.js'); const r = addCardsToDeck('Doubt Solver', [{ front: q?.text.slice(0, 300) || 'Doubt', back: c.msgs[i].text.slice(0, 900) }], 'Doubt Solver'); toast(r.added ? 'Saved to deck “Doubt Solver” ✓' : 'Already saved'); });
 }
-function mic(btn, inp) {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { btn.disabled = true; btn.title = 'Voice input is not supported on this device/browser'; return; }
-  let rec = null; btn.onclick = () => { if (rec) { rec.stop(); return; } rec = new SR(); rec.lang = 'en-IN'; rec.interimResults = false; rec.onresult = e => { inp.value += (inp.value ? ' ' : '') + [...e.results].map(r => r[0].transcript).join(' '); inp.oninput(); }; rec.onerror = e => toast(e.error === 'not-allowed' ? 'Microphone permission was denied' : 'Voice input failed: ' + e.error); rec.onend = () => { rec = null; btn.textContent = '🎤'; }; btn.textContent = '⏹'; try { rec.start(); } catch { rec = null; btn.textContent = '🎤'; } };
-}
+function mic(btn, inp) { attachMic(btn, inp, { AI: C.AI, toast, lang: () => 'English' }); }
 function pickContext() {
   const db = C.db; const { el, close } = C.modal(`<div class="eyebrow">CONTEXT</div><h2>Use your own material</h2><div class="seg" id="cx"><button data-k="q" class="active">Quiz question</button><button data-k="m">My mistakes</button><button data-k="t">Topic</button><button data-k="n">Note / text</button></div><div id="cxBody" style="max-height:50vh;overflow:auto;margin-top:8px"></div>`, { wide: true });
   const set = it => { ctxItem = it; close(); page(C); };

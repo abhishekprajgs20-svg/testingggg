@@ -8,7 +8,8 @@ import { renderStem, renderOpt, hasOptFigs, generateNonVerbal, NV_KINDS, NV_ALL 
 import { EXPL_TYPES, explRule, explPer, VERBAL_TYPES, RESPONSE_MODES, LENGTHS } from './ai-modes.js';
 import { initAssist, openAssist, answerPrompt, SYSTEM_PROMPT, recentFor, clearLog, showAnswer } from './ai-assist.js';
 window.__qxGT = (q, sl, tl) => gtRaw(q, sl, tl); // used by the TXT/PDF translator tool (iframe)
-import { UPSC_NAV, UPSC_TABS, UPSC_LABELS, mergeUpsc } from './upsc/lite.js';
+import { STUDIO_NAV, STUDIO_TABS, STUDIO_LABELS } from './studio/lite.js';
+import { UPSC_NAV, UPSC_TABS, UPSC_LABELS, mergeUpsc, upscHomeHtml } from './upsc/lite.js';
 const iconUrl = './quizinox-icon.png';
 // Keep the quiz/player startup bundle light. PDF engines and jsPDF are loaded
 // only when a user actually opens a PDF/export feature (important on low-RAM PCs).
@@ -41,8 +42,8 @@ function explanationLines(value) {
 }
 const L = i => String.fromCharCode(65 + i);
 const STORE = 'quizinox_local_v1', PLAY_STORE = 'quizinox_play_v1';
-const APP_VERSION = '4.0.0';
-const defaultState = () => ({ quizzes: [], attempts: [], notebook: { items: {} }, notebookSeeded: false, achSeen: [], analyser: [], shuffleHistory: {}, bookmarks: {}, revision: {}, revStats: { mastered: 0 }, aiAnalysis: null, aiLog: {}, settings: { name: 'Learner', geminiKey: '', aiKeys: [], aiModel: AI.FALLBACK_CHAIN[0], aiModels: {}, aiPrimary: 'gemini', aiMode: 'auto', aiOrder: AI.DEFAULT_ORDER.slice(), aiDisabled: {}, aiCross: true, aiGuard: true, puterLinked: false, puterModel: '', customBaseUrl: '', aiModelLists: {}, aiAutoFallback: true, analystDaily: 5, tutorLang: 'English', langMode: 'single', langs: ['original'], aiSource: 'default', aiLogin: { enabled: {}, models: {}, order: [], modelList: [] }, aiWeb: { site: 'chatgpt', customUrl: '' }, aiPool: true, aiPoolCursor: 0 }, activeTab: 'home', notesHub: { root: [] }, vault: { items: [] }, roadmap: { exams: [] }, teacher: { sessions: [] }, debate: { sessions: [] }, studio: { projects: [] } });
+const APP_VERSION = '3.2.0';
+const defaultState = () => ({ quizzes: [], attempts: [], notebook: { items: {} }, notebookSeeded: false, achSeen: [], analyser: [], shuffleHistory: {}, bookmarks: {}, revision: {}, revStats: { mastered: 0 }, aiAnalysis: null, aiLog: {}, settings: { name: 'Learner', geminiKey: '', aiKeys: [], aiModel: AI.FALLBACK_CHAIN[0], aiModels: {}, aiPrimary: 'gemini', aiMode: 'auto', aiOrder: AI.DEFAULT_ORDER.slice(), aiDisabled: {}, aiCross: true, aiGuard: true, puterLinked: false, puterModel: '', customBaseUrl: '', aiModelLists: {}, aiAutoFallback: true, analystDaily: 5, tutorLang: 'English', langMode: 'single', langs: ['original'], aiSource: 'default', aiLogin: { enabled: {}, models: {}, order: [], modelList: [] }, aiWeb: { site: 'chatgpt', customUrl: '' } }, activeTab: 'home' });
 let db = load();
 let currentQuiz = null, play = null, toastTimer = null, lastResult = null;
 AI.initAI({ getSettings: () => db.settings, saveSettings: () => save(), askWeb: o => askWebChat(o) });
@@ -125,15 +126,10 @@ document.querySelector('#app').innerHTML = `
       <button class="navitem" data-tab="predictor"><span>🎯</span> Quizinox Predictor</button>
       <button class="navitem" data-tab="ai"><span>✦</span> AI Studio</button>
       <button class="navitem" data-tab="tools"><span>⌘</span> File Studio</button>
-      <div class="nav-group">LEARNING TOOLS · NEW</div>
-      <button class="navitem v4-nav" data-tab="notes"><span>🗒</span> Notes Hub</button>
-      <button class="navitem v4-nav" data-tab="vault"><span>🗄</span> Knowledge Vault</button>
-      <button class="navitem v4-nav" data-tab="roadmap"><span>🗓</span> Exam Roadmap</button>
-      <button class="navitem v4-nav" data-tab="teacher"><span>🎓</span> Teach Me Mode</button>
-      <button class="navitem v4-nav" data-tab="debate"><span>⚖</span> Discussion Room</button>
-      <button class="navitem v4-nav" data-tab="studio"><span>🛠</span> Creator Studio</button>
       <div class="nav-group">UPSC PREPARATION CENTRE</div>
       ${UPSC_NAV.map(([k, i, l]) => `<button class="navitem u-nav" data-tab="${k}"><span>${i}</span> ${l}</button>`).join('')}
+      <div class="nav-group">STUDY SUITE</div>
+      ${STUDIO_NAV.map(([k, i, l]) => `<button class="navitem u-nav" data-tab="${k}"><span>${i}</span> ${l}</button>`).join('')}
       <button class="navitem" data-tab="settings"><span>⚙</span> Settings</button>
     </nav>
     <div class="sidebottom"><div class="offline-pill"><i></i> Works offline</div><small>All quiz data stays on this device. AI tools use the internet only when you start them.</small><div class="version">QUIZINOX · v${APP_VERSION}</div></div>
@@ -152,10 +148,9 @@ document.querySelector('#app').innerHTML = `
 `;
 
 const view = $('#view');
-const labels = { home: 'Your learning space', quizzes: 'Your quiz library', create: 'Quiz studio', revision: 'Automatic revision', search: 'Question bank search', reports: 'Performance analytics', ai: 'AI study studio', tools: 'File studio', settings: 'Preferences', mocks: 'Mock tests & section tests', notebook: 'Personal mistake notebook', achievements: 'Your achievements', analyser: 'Quizinox Analyser', predictor: 'Quizinox Predictor', notes: 'Notes hub', vault: 'Personal knowledge vault', roadmap: 'Exam countdown roadmap', teacher: 'Teach Me Mode', debate: 'Discussion Room', studio: 'Content Creator Studio' };
-Object.assign(labels, UPSC_LABELS);
-const V4_TABS = ['notes', 'vault', 'roadmap', 'teacher', 'debate', 'studio'];
-const MORE_TABS = [...UPSC_TABS, ...V4_TABS, 'create', 'ai', 'tools', 'settings', 'mocks', 'notebook', 'achievements', 'analyser', 'predictor'];
+const labels = { home: 'Your learning space', quizzes: 'Your quiz library', create: 'Quiz studio', revision: 'Automatic revision', search: 'Question bank search', reports: 'Performance analytics', ai: 'AI study studio', tools: 'File studio', settings: 'Preferences', mocks: 'Mock tests & section tests', notebook: 'Personal mistake notebook', achievements: 'Your achievements', analyser: 'Quizinox Analyser', predictor: 'Quizinox Predictor' };
+Object.assign(labels, UPSC_LABELS, STUDIO_LABELS);
+const MORE_TABS = [...UPSC_TABS, ...STUDIO_TABS, 'create', 'ai', 'tools', 'settings', 'mocks', 'notebook', 'achievements', 'analyser', 'predictor'];
 function markNav(tab) { $$('.navitem,.mobile-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab || (b.hasAttribute('data-more') && MORE_TABS.includes(tab)))); }
 function scrollTop() { window.scrollTo(0, 0); $('.main')?.scrollTo?.(0, 0); }
 const navStack = []; let navBusy = false;
@@ -186,12 +181,7 @@ $('[data-more]').addEventListener('click', () => { if (play) return toast('Finis
   { icon: '🏆', label: 'Achievements', hint: 'XP · streaks · badges · personal bests', run: () => setTab('achievements') },
   { icon: '🧠', label: 'Quizinox Analyser', hint: 'AI teacher that knows your history', cls: 'practice-icon', run: () => setTab('analyser') },
   { icon: '🎯', label: 'Quizinox Predictor', hint: 'Exam readiness score & range', run: () => setTab('predictor') },
-  { icon: '🗒', label: 'Notes Hub', hint: 'Paste · PDF · AI notes with nested subsections', run: () => setTab('notes') },
-  { icon: '🗄', label: 'Knowledge Vault', hint: 'Searchable library of facts & screenshots', run: () => setTab('vault') },
-  { icon: '🗓', label: 'Exam Roadmap', hint: 'Countdown + dynamic study roadmap', run: () => setTab('roadmap') },
-  { icon: '🎓', label: 'Teach Me Mode', hint: 'AI teacher for your whole journey', run: () => setTab('teacher') },
-  { icon: '⚖', label: 'Discussion Room', hint: 'Debate & discuss with AI + voice', run: () => setTab('debate') },
-  { icon: '🛠', label: 'Creator Studio', hint: 'One source → notes, MCQs, flashcards…', run: () => setTab('studio') },
+  { icon: '🛠', label: 'Study Suite', hint: 'Notes · Vault · Teacher · Roadmap · Debate · Content Studio', cls: 'practice-icon', run: () => actionSheet('Study Suite', '', STUDIO_NAV.map(([k, i, l]) => ({ icon: i, label: l, hint: STUDIO_LABELS[k], run: () => setTab(k) }))) },
   { icon: '🏛', label: 'UPSC Preparation Centre', hint: 'Syllabus · Memorisation · Flashcards · Planner · Current Affairs · Doubts', cls: 'practice-icon', run: () => actionSheet('UPSC Preparation Centre', '', UPSC_NAV.map(([k, i, l]) => ({ icon: i, label: l, hint: UPSC_LABELS[k], run: () => setTab(k) }))) },
   { icon: '⚙', label: 'Settings', hint: 'Profile, AI keys, languages, data', cls: 'practice-icon', run: () => setTab('settings') },
 ]); });
@@ -206,7 +196,7 @@ window.addEventListener('online', () => { updateNet(); toast('Back online — AI
 window.addEventListener('offline', () => { updateNet(); toast('Offline — your quizzes keep working'); });
 updateNet();
 
-function render() { if (play) { renderPlayer(); return; } const tab = db.activeTab || 'home'; markNav(tab); ({ home, quizzes: library, create: () => creator(), revision: revisionPage, search: searchPage, reports, ai: aiStudio, tools, settings, mocks: () => lazyPage('mocks'), notebook: () => lazyPage('notebook'), achievements: () => lazyPage('achievements'), analyser: () => lazyPage('analyser'), predictor: () => lazyPage('predictor'), ...Object.fromEntries(V4_TABS.map(k => [k, () => v4Page(k)])), ...Object.fromEntries(UPSC_TABS.map(k => [k, () => upscPage(k)])) }[tab] || home)(); }
+function render() { if (play) { renderPlayer(); return; } const tab = db.activeTab || 'home'; markNav(tab); ({ home, quizzes: library, create: () => creator(), revision: revisionPage, search: searchPage, reports, ai: aiStudio, tools, settings, mocks: () => lazyPage('mocks'), notebook: () => lazyPage('notebook'), achievements: () => lazyPage('achievements'), analyser: () => lazyPage('analyser'), predictor: () => lazyPage('predictor'), ...Object.fromEntries(UPSC_TABS.map(k => [k, () => upscPage(k)])), ...Object.fromEntries(STUDIO_TABS.map(k => [k, () => studioPage(k)])) }[tab] || home)(); }
 
 /* ------------------------------ HOME ------------------------------ */
 function home() {
@@ -216,6 +206,7 @@ function home() {
  ${saved && (saved.quiz?.isRevision || db.quizzes.some(q => q.id === saved.quiz?.id)) ? `<div class="resume-bar"><span>⏸ Unfinished attempt: <b>${esc(saved.quiz.title)}</b> · ${Object.keys(saved.answers || {}).length}/${saved.questions.length} answered · continue at Q${(saved.index || 0) + 1}${saved.lastAnswered != null ? ` (last answered Q${saved.lastAnswered + 1})` : ''}</span><div><button class="secondary" id="discardResume">Discard</button><button class="primary" id="resumeQuiz">Resume →</button></div></div>` : ''}
  ${(() => { const n = dueItems().length; return n ? `<div class="resume-bar revise-bar"><span>↻ <b>${n} question${n > 1 ? 's' : ''}</b> due for revision today (1 → 3 → 7 → 15 day cycle)</span><div><button class="primary" id="homeRevise">Revise now →</button></div></div>` : ''; })()}
  <div class="hero"><div class="hero-copy"><div class="eyebrow">✦ YOUR PERSONAL QUIZ COMMAND CENTRE</div><h1>Learn smarter.<br><span>Score higher.</span></h1><p>Create powerful tests, practise anywhere and track your progress — with or without internet.</p><div class="hero-actions"><button class="primary" id="heroCreate">＋ Create a quiz</button><button class="ghost light" id="heroImport">⇧ Import questions</button></div></div><div class="hero-art"><div class="orbit orbit1"></div><div class="orbit orbit2"></div><img class="hero-logo" src="${iconUrl}" alt=""/><div class="float-card fc1">⚡ <b>Focus mode</b></div><div class="float-card fc2">✓ <b>Offline ready</b></div><div class="hero-stat"><strong>${db.quizzes.length}</strong><small>QUIZZES SAVED</small></div></div></div>
+
  <div class="section-head"><div><div class="eyebrow">AT A GLANCE</div><h2>Your dashboard</h2></div><span class="muted">Stored securely on this phone</span></div>
  <div class="stats-grid"><div class="stat-card"><div class="stat-icon purple">▤</div><small>MY QUIZZES</small><strong>${db.quizzes.length}</strong><span>${totalQ} questions ready</span></div><div class="stat-card"><div class="stat-icon blue">◷</div><small>ATTEMPTS</small><strong>${db.attempts.length}</strong><span>Practice sessions</span></div><div class="stat-card"><div class="stat-icon green">↗</div><small>AVERAGE SCORE</small><strong>${avg}%</strong><span>Across all attempts</span></div><div class="stat-card"><div class="stat-icon amber">↻</div><small>IN REVISION</small><strong>${Object.keys(db.revision).length}</strong><span>${dueItems().length} due now · ${db.revStats.mastered || 0} mastered</span></div></div>
  <div class="two-col"><div class="panel"><div class="panel-head"><div><h3>Recent quizzes</h3><p>Pick up where you left off</p></div><button class="textbtn" id="seeAll">View all →</button></div>${db.quizzes.length ? db.quizzes.slice().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 4).map(quizRow).join('') : '<div class="empty-mini"><span>▤</span><b>No quizzes yet</b><small>Create your first quiz or import a file.</small></div>'}</div><div class="panel insight"><div class="panel-head"><div><h3>Quick actions</h3><p>Everything you need, one tap away</p></div><span class="spark">✦</span></div><button class="action-tile" id="actCreate"><span class="tileicon">＋</span><span><b>Build a quiz</b><small>Create questions manually</small></span><span class="arrow">↗</span></button><button class="action-tile" id="actImport"><span class="tileicon bluebg">⇧</span><span><b>Import a file</b><small>TXT, JSON or PDF</small></span><span class="arrow">↗</span></button><button class="action-tile" id="actPdf"><span class="tileicon amberbg">📄</span><span><b>Coaching PDF → TXT</b><small>SFG · Vajiram · VisionIAS · any PDF</small></span><span class="arrow">↗</span></button><button class="action-tile" id="actReports"><span class="tileicon greenbg">▥</span><span><b>View performance</b><small>Accuracy, speed, subject & topic analysis</small></span><span class="arrow">↗</span></button><button class="action-tile" id="actAi"><span class="tileicon">✦</span><span><b>AI Study Studio</b><small>Analyst · Ask AI tutor · question generator</small></span><span class="arrow">↗</span></button><button class="action-tile" id="actSearch"><span class="tileicon bluebg">⌕</span><span><b>Search question bank</b><small>Find any question by keyword</small></span><span class="arrow">↗</span></button></div></div>
@@ -489,7 +480,7 @@ function finishQuiz() {
   const max = p.questions.length, percent = Math.max(0, Math.round(score / max * 100));
   const attempt = { id: uid(), quizId: p.quiz.id, quizTitle: p.quiz.title, subject, mode: p.mode, date: new Date().toISOString(), durationSec: Math.round((Date.now() - p.started) / 1000), total: max, correct, wrong, blank, score: Number(score.toFixed(2)), percent, pass: p.quiz.settings.pass ?? 40, negative: neg, details };
   if (p.sections) attempt.sections = p.sections.map(sc => { const ds = details.slice(sc.start, sc.end), c = ds.filter(d => d.status === 'correct').length, w = ds.filter(d => d.status === 'wrong').length; return { name: sc.name, total: ds.length, correct: c, wrong: w, blank: ds.length - c - w, score: Number((c - w * neg).toFixed(2)), minutes: sc.minutes }; });
-  if (p.mode === 'omr') attempt.omr = true;
+  if (p.mode === 'omr') { attempt.omr = true; attempt.omrSheet = p.omr.sheet; }
   if (p.quiz.isRevision) { attempt.isRevision = true; collectMistakes(attempt); attempt.revisionSummary = applyRevisionResults(details); save(); leavePlayer(); renderResult(attempt); return; }
   attempt.revisionAdded = addWrongToRevision(p.quiz, details);
   collectMistakes(attempt);
@@ -504,14 +495,15 @@ function renderResult(a, filter = 'all') {
   const rows = a.details.map((d, i) => ({ d, i })).filter(({ d }) => filter === 'all' || d.status === filter);
   view.innerHTML = `<div class="result-wrap"><div class="result-hero"><div class="result-ring" style="--score:${a.percent * 3.6}deg"><div><strong>${a.percent}%</strong><small>SCORE</small></div></div><div><div class="eyebrow">${passed ? '🏆 PASSED' : 'SESSION COMPLETE'}</div><h1>${passed ? 'Great work!' : 'Quiz completed!'}</h1><p>${esc(a.quizTitle)} · ${new Date(a.date).toLocaleString()}${a.durationSec ? ` · ${fmtDur(a.durationSec)}` : ''}</p></div></div>
   <div class="stats-grid result-stats"><div class="stat-card"><small>CORRECT</small><strong class="green-text">${a.correct}</strong></div><div class="stat-card"><small>INCORRECT</small><strong class="red-text">${a.wrong}</strong></div><div class="stat-card"><small>UNANSWERED</small><strong>${a.blank}</strong></div><div class="stat-card"><small>MARKS</small><strong>${a.score}/${a.total}</strong></div></div>
-  ${attemptCard(a)}${sectionTable(a)}${perfPanel(a)}${a.omr ? omrExportPanel(a) : ''}
+  ${attemptCard(a)}${sectionTable(a)}${a.omr ? '<div class="panel" id="omrEval"></div>' : ''}${perfPanel(a)}
   <div class="panel artifact-panel" ${a.isRevision ? 'hidden' : ''}><div class="panel-head"><div><h3>🌐 Language & study exports</h3><p>Choose a language, then download or share each generated file directly.</p></div></div><div class="form-grid"><label>Export language<select id="artifactLang"><option value="original">Original</option></select></label><label>Translate into<select id="artifactTarget"></select></label></div><div class="dialog-actions"><button class="secondary" id="artifactTranslate">🌐 Translate / prepare language</button></div><div class="artifact-grid"><div class="artifact-item"><b>🎮 Playable HTML Quiz</b><div><button class="primary" id="downloadQuizHtml">⬇ Download HTML</button><button class="secondary" id="shareQuizHtml">↗ Share</button></div></div><div class="artifact-item"><b>📄 Test PDF</b><div><button class="primary" id="downloadTestPdf">⬇ Download PDF</button><button class="secondary" id="shareTestPdf">↗ Share</button></div></div><div class="artifact-item"><b>✅ Solution PDF</b><div><button class="primary" id="downloadSolPdf">⬇ Download PDF</button><button class="secondary" id="shareSolPdf">↗ Share</button></div></div><div class="artifact-item"><b>📚 Test + Solution PDF</b><div><button class="primary" id="downloadMergedPdf">⬇ Download PDF</button><button class="secondary" id="shareMergedPdf">↗ Share</button></div></div><div class="artifact-item"><b>📝 Notes HTML</b><div><button class="primary" id="downloadNotesHtml">⬇ Download HTML</button><button class="secondary" id="shareNotesHtml">↗ Share</button></div></div><div class="artifact-item"><b>📘 Notes PDF</b><div><button class="primary" id="downloadNotesPdf">⬇ Download PDF</button><button class="secondary" id="shareNotesPdf">↗ Share</button></div></div></div><p class="muted" id="artifactStatus">Files are saved to Downloads on web, or shared through Android's share sheet.</p><div class="dialog-actions"><button class="secondary" id="openTestMaker">Open supplied Test Series Maker</button><button class="secondary" id="openNotesMaker">Open supplied Notes Maker</button><button class="secondary" id="openQuizMaker">Open supplied Quiz Maker</button><button class="secondary" id="openTranslatorTool">Open supplied Translator</button></div></div>
   <div class="panel"><div class="panel-head"><div><h3>Answer review</h3><p>Review every response and explanation.</p></div><button class="secondary" id="resultPdf">⇩ PDF report</button></div>
   <div class="chips">${[['all', 'All', a.total], ['correct', 'Correct', a.correct], ['wrong', 'Wrong', a.wrong], ['blank', 'Unanswered', a.blank]].map(([k, l, n]) => `<button class="chip ${filter === k ? 'active' : ''}" data-filter="${k}">${l} · ${n}</button>`).join('')}</div>
   ${rows.length ? rows.map(({ d, i }) => `<div class="review-row"><div class="review-number">${i + 1}</div><div class="review-content"><b>${escMl(d.question)}</b>${figStem(d)}<div class="review-status ${d.status}">${d.status.toUpperCase()} · ${d.selected == null ? 'Not answered' : `Your answer: ${L(idxOf(d, d.selected))}`} · Correct: ${L(idxOf(d, d.correct))}${d.timeSec ? ` · ⏱ ${d.timeSec}s` : ''}${d.topic ? ` · ${esc(d.topic)}` : ''}</div><div class="review-options">${d.options.map((o, j) => `<div class="${o.original === d.correct ? 'review-correct' : o.original === d.selected ? 'review-wrong' : ''}">${L(j)}. ${figOpt(d, o.original)}${esc(o.text)} ${o.original === d.correct ? '✓' : o.original === d.selected ? '✕' : ''}</div>`).join('')}</div>${d.explanation ? `<p class="explanation-text">${esc(explanationLines(d.explanation))}</p>` : ''}<div class="review-actions"><button class="textbtn ${isBookmarkedText(d.question) ? 'bm-on' : ''}" data-rbm="${i}">${isBookmarkedText(d.question) ? '⚑ Saved as difficult' : '⚐ Save as difficult'}</button><button class="textbtn" data-rai="${i}">✦ Ask AI</button></div></div></div>`).join('') : '<div class="empty-mini"><b>Nothing here</b></div>'}</div>
 <div class="result-actions"><button class="primary" id="resultHome">Back to dashboard</button>${a.isRevision ? '<button class="secondary" id="resultRevision">↻ Revision list</button>' : `<button class="secondary" id="resultAgain">↻ Retry quiz</button>`}</div>
 </div>`;
-  if (!a.isRevision) setupResultArtifacts(a); $('#resultHome').onclick = () => setTab('home'); $('#resultAgain')?.addEventListener('click', () => chooseMode(a.quizId)); $('#resultRevision')?.addEventListener('click', () => setTab('revision')); $('#resultPdf').onclick = () => exportAttemptPDF(a); $('#omrPng')?.addEventListener('click', () => omrExport(a, 'png')); $('#omrPdf')?.addEventListener('click', () => omrExport(a, 'pdf'));
+  if (a.omr && $('#omrEval')) import('./studio/omr-eval.js').then(m => m.mount($('#omrEval'), a, upscCtx())).catch(e => { $('#omrEval').innerHTML = '<p class="muted">OMR evaluation could not load: ' + esc(e.message) + '</p>'; });
+  if (!a.isRevision) setupResultArtifacts(a); $('#resultHome').onclick = () => setTab('home'); $('#resultAgain')?.addEventListener('click', () => chooseMode(a.quizId)); $('#resultRevision')?.addEventListener('click', () => setTab('revision')); $('#resultPdf').onclick = () => exportAttemptPDF(a);
   const quizOf = () => db.quizzes.find(q => q.id === a.quizId);
   $$('[data-rbm]').forEach(b => b.onclick = () => { const d = a.details[Number(b.dataset.rbm)]; toggleBookmark(snapFromDetail(d, quizOf())); renderResult(a, filter); });
   $$('[data-rai]').forEach(b => b.onclick = () => { const d = a.details[Number(b.dataset.rai)]; askAI({ ...snapFromDetail(d, quizOf()), selected: d.selected }); });
@@ -718,7 +710,12 @@ async function extractNotes(q) {
 // Mock builder, Achievements, Notebook, Analyser and Predictor live in their own file that is
 // downloaded only when opened — startup stays as fast as before.
 let upscP = null; const loadUpsc = () => upscP ||= import('./upsc/index.js');
-const upscCtx = () => ({ ...extrasCtx(), aiGenerator, startRevision, addRevisionItem, snapFromQuestion, qKey, dueItems });
+const upscCtx = () => ({ ...extrasCtx(), aiGenerator, startRevision, addRevisionItem, snapFromQuestion, qKey, dueItems, pickFile, getPdfEngines, getJsPDF, pdfWriter, openAssist, collectInto, fmtDur });
+let studioP = null; const loadStudio = () => studioP ||= import('./studio/index.js');
+function studioPage(name) {
+  view.innerHTML = '<div class="empty-state"><div>⏳</div><h3>Loading…</h3></div>';
+  loadStudio().then(m => { if (db.activeTab === name && !play) return m.pages[name](upscCtx()); }).catch(e => { console.error(e); studioP = null; view.innerHTML = `<div class="empty-state"><div>⚠</div><h3>Could not load this page</h3><p>${esc(e.message)}</p></div>`; });
+}
 function upscPage(name) {
   view.innerHTML = '<div class="empty-state"><div>⏳</div><h3>Loading…</h3></div>';
   loadUpsc().then(m => { if (db.activeTab === name && !play) return m.pages[name](upscCtx()); }).catch(e => { console.error(e); upscP = null; view.innerHTML = `<div class="empty-state"><div>⚠</div><h3>Could not load this page</h3><p>${esc(e.message)}</p></div>`; });
@@ -732,16 +729,6 @@ const extrasCtx = () => ({
 function lazyPage(name) {
   view.innerHTML = '<div class="empty-state"><div>⏳</div><h3>Loading…</h3></div>';
   loadExtras().then(m => { if (db.activeTab === name && !play) m.pages[name](extrasCtx()); }).catch(e => { console.error(e); extrasP = null; view.innerHTML = `<div class="empty-state"><div>⚠</div><h3>Could not load this page</h3><p>${esc(e.message)}</p></div>`; });
-}
-/* ------------------------------ v4.0 · LEARNING TOOLS PAGES ------------------------------ */
-let v4P = null; const loadV4 = () => v4P ||= import('./v4/index.js');
-const v4Ctx = () => ({
-  get db() { return db; }, view, save, $, $$, esc, escMl, md, toast, modal, confirmBox, actionSheet, setTab, uid, AI, gemini, saveFile, slug, L, parseText, parseJSON, question, quizTemplate, buildProfile, normQ, qKey, dueItems, startQuiz, chooseMode, aiGenerator, pickFile,
-  getPdfEngines: () => getPdfEngines(), getJsPDF: () => getJsPDF(),
-});
-function v4Page(name) {
-  view.innerHTML = '<div class="empty-state"><div>⏳</div><h3>Loading…</h3></div>';
-  loadV4().then(m => { if (db.activeTab === name && !play) m.pages[name](v4Ctx()); }).catch(e => { console.error(e); v4P = null; view.innerHTML = `<div class="empty-state"><div>⚠</div><h3>Could not load this page</h3><p>${esc(e.message)}</p></div>`; });
 }
 
 /* ------------------------------ REPORTS ------------------------------ */
@@ -940,86 +927,6 @@ async function exportAttemptPDF(a) {
     w.gap(3);
   });
   saveFile(`${slug(a.quizTitle)}-result.pdf`, w.doc.output('blob'), 'application/pdf').then(r => toast(`PDF saved (${r.where}) ✓`));
-}
-/* ---------- OMR sheet: detailed evaluation + sheet export (v4) ---------- */
-const omrExportPanel = a => `<div class="panel"><div class="panel-head"><div><h3>▥ OMR evaluation sheet</h3><p>Your filled OMR sheet with every bubble marked — download as image or print-ready PDF</p></div><div class="dialog-actions" style="margin:0"><button class="secondary" id="omrPng">⬇ OMR sheet (PNG)</button><button class="primary" id="omrPdf">⇩ OMR sheet (PDF)</button></div></div>
-  <div class="omr-mini-grid">${a.details.map((d, i) => { const ok = d.status === 'correct', sel = d.selected != null; return `<div class="omr-mini ${ok ? 'ok' : d.status === 'wrong' ? 'bad' : ''}" title="Q${i + 1}">${i + 1}</div>`; }).join('')}</div>
-  <p class="muted">Green = correct · Red = wrong · Grey = unanswered. The exported sheet shows exact bubbles as filled on the OMR grid.</p></div>`;
-
-function omrSheetCanvas(a) {
-  const n = a.details.length, cols = 2;
-  const perCol = Math.ceil(n / cols) || 1;
-  const pad = 30, headerH = 132, blockH = 36, colGap = 46, colW = 260;
-  const W = pad * 2 + colW * cols + colGap, H = headerH + perCol * blockH + pad + 56;
-  const cv = document.createElement('canvas'); cv.width = W * 2; cv.height = H * 2;
-  const g = cv.getContext('2d'); g.scale(2, 2);
-  // printable light sheet
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
-  g.strokeStyle = '#111'; g.lineWidth = 1.6; g.strokeRect(8, 8, W - 16, H - 16);
-  // header
-  g.fillStyle = '#111'; g.font = 'bold 17px Arial'; g.textAlign = 'center';
-  g.fillText('QUIZINOX — OMR ANSWER SHEET', W / 2, 38);
-  g.font = '11px Arial';
-  g.fillText(a.quizTitle.slice(0, 80), W / 2, 56);
-  g.textAlign = 'left'; g.font = '10px Arial';
-  const line = (label, x, y, w) => { g.fillText(label, x, y); g.strokeStyle = '#555'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x + g.measureText(label).width + 4, y); g.lineTo(x + w, y); g.stroke(); };
-  line('Name:', pad + 4, 78, 170); line('Roll No.:', pad + 200, 78, 110);
-  line('Date:', pad + 340, 78, 150);
-  g.fillStyle = '#333'; g.font = 'bold 10px Arial';
-  g.fillText(`Score: ${a.score}/${a.total} (${a.percent}%)   ✓ ${a.correct}   ✕ ${a.wrong}   Blank ${a.blank}   Time: ${fmtDur(a.durationSec || 0)}`, pad + 4, 96);
-  g.strokeStyle = '#111'; g.lineWidth = 1; g.beginPath(); g.moveTo(14, headerH - 26); g.lineTo(W - 14, headerH - 26); g.stroke();
-  g.font = 'bold 9px Arial'; g.fillStyle = '#111'; g.fillText('Q  A   B   C   D', pad + 14, headerH - 10);
-  // bubbles
-  for (let i = 0; i < n; i++) {
-    const col = Math.floor(i / perCol), row = i % perCol;
-    const x0 = pad + col * (colW + colGap), y0 = headerH + row * blockH;
-    const d = a.details[i];
-    g.fillStyle = '#111'; g.font = 'bold 10px Arial'; g.textAlign = 'left';
-    g.fillText(String(i + 1).padStart(2, '0'), x0, y0 + 14);
-    const idx = o => d.options.findIndex(t => t.original === o);
-    for (let j = 0; j < 4; j++) {
-      const cx = x0 + 34 + j * 26, cy = y0 + 10, r = 8.5;
-      const isSel = d.selected != null && idx(d.selected) === j;
-      const isCorr = idx(d.correct) === j;
-      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
-      if (isSel) { g.fillStyle = d.status === 'correct' ? '#15803d' : '#b91c1c'; g.fill(); g.strokeStyle = '#111'; }
-      else if (isCorr && d.status === 'wrong') { g.fillStyle = '#dcfce7'; g.fill(); g.strokeStyle = '#15803d'; }
-      else { g.fillStyle = '#fff'; g.fill(); g.strokeStyle = '#333'; }
-      g.lineWidth = isSel || isCorr ? 1.8 : 1; g.stroke();
-      g.fillStyle = isSel ? '#fff' : '#333'; g.font = 'bold 8px Arial'; g.textAlign = 'center';
-      g.fillText(L(j), cx, cy + 3);
-    }
-    // status marker
-    g.textAlign = 'left'; g.font = 'bold 9px Arial';
-    g.fillStyle = d.status === 'correct' ? '#15803d' : d.status === 'wrong' ? '#b91c1c' : '#777';
-    g.fillText(d.status === 'correct' ? '✓' : d.status === 'wrong' ? '✕' : '–', x0 + 142, y0 + 14);
-  }
-  // footer legend
-  g.textAlign = 'left'; g.font = '9px Arial'; g.fillStyle = '#444';
-  g.fillText('● Filled bubble = your answer    ✓ correct    ✕ wrong (green ring = correct option)    – unanswered', pad, H - 24);
-  g.fillText(`Generated by QUIZINOX · ${new Date(a.date).toLocaleString()}`, pad, H - 12);
-  return cv;
-}
-
-async function omrExport(a, kind) {
-  try {
-    const cv = omrSheetCanvas(a);
-    if (kind === 'png') {
-      const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
-      const r = await saveFile(`${slug(a.quizTitle)}-omr-sheet.png`, blob, 'image/png');
-      toast(`OMR sheet saved (${r.where}) ✓`);
-    } else {
-      const { jsPDF } = await getJsPDF();
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
-      const img = cv.toDataURL('image/jpeg', 0.92);
-      const iw = cv.width / 2, ih = cv.height / 2;
-      const scale = Math.min((pw - 40) / iw, (ph - 40) / ih);
-      pdf.addImage(img, 'JPEG', 20, 20, iw * scale, ih * scale);
-      pdf.save(`${slug(a.quizTitle)}-omr-sheet.pdf`);
-      toast('OMR sheet PDF saved ✓');
-    }
-  } catch (e) { toast('OMR export failed: ' + (e.message || e), 5000); }
 }
 async function exportQuizPDF(q) {
   const { jsPDF } = await getJsPDF();
@@ -1374,9 +1281,9 @@ function settings() {
   <div class="title-actions row"><button class="secondary" id="fetchModels">⟳ Load all models from my key</button></div><p class="muted" id="modelStatus"></p>
   <h4>Fallback order</h4><p class="muted">If the main AI fails, QUIZINOX tries these providers top to bottom (only those that have a key). Use ▲ ▼ to reorder, untick to skip one.</p>
   <div id="orderList" class="order-list"></div>
+  <div class="panel" style="margin:10px 0;border-color:#5b4ab0"><label class="check"><input type="checkbox" id="aiMulti" ${st.aiMulti === true ? 'checked' : ''}/> <b>Use several AIs together (rotation)</b></label><div class="muted">Each answer still comes from one AI, but successive requests rotate across the keys of <b>all ticked AIs</b> (for example Gemini + Groq) instead of using only the preferred provider. If one fails, the next ticked AI takes over. The per-key rotation inside each AI keeps working as before. Turn off to go back to “preferred provider first”.</div><div id="multiList" class="multi-list">${AI.DEFAULT_ORDER.filter(p => AI.keysOf(p).length).map(p => `<label class="check"><input type="checkbox" data-mp="${p}" ${(st.aiMultiProviders || AI.DEFAULT_ORDER.filter(x => AI.keysOf(x).length)).includes(p) ? 'checked' : ''}/> ${esc(AI.PROVIDERS[p].name)} <small class="muted">· ${AI.keysOf(p).length} key${AI.keysOf(p).length > 1 ? 's' : ''}</small></label>`).join('') || '<div class="muted">Add API keys of two or more providers below to use this.</div>'}</div></div>
   <label class="check"><input type="checkbox" id="aiFallback" ${st.aiAutoFallback === false ? '' : 'checked'}/> If a model is busy, missing or out of quota, try the provider's other models</label>
   <label class="check"><input type="checkbox" id="aiCross" ${st.aiCross === false ? '' : 'checked'}/> If every key of a provider fails, continue the job on the next provider</label>
-  <label class="check"><input type="checkbox" id="aiPool" ${st.aiPool !== false ? 'checked' : ''}/> <b>Multi-AI pool rotation</b> — rotate every AI request across ALL enabled providers &amp; their keys (Gemini + Groq + … ek saath). Off = main AI first, others only as fallback</label>
   <label class="check"><input type="checkbox" id="aiGuard" ${st.aiGuard === false ? '' : 'checked'}/> Free-tier guard — stay under ${Math.round(AI.SAFETY * 100)}% of the published free limits (paid Gemini keys skip it)</label>
   <div class="form-grid"><label>AI Study Analyst runs per day<select id="analystDaily">${[2, 3, 5, 10, 20].map(n => `<option ${Number(st.analystDaily) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>AI answer language<select id="tutorLangSet">${['English', 'Hindi', 'Hinglish'].map(l => `<option ${st.tutorLang === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
   <button class="secondary" id="saveAi">Save AI settings</button>
@@ -1437,7 +1344,7 @@ function settings() {
   $('#puterIn').onclick = async () => { const b = $('#puterIn'); b.disabled = true; b.textContent = 'Opening…'; try { const ok = await AI.puterSignIn(); toast(ok ? 'Signed in to Puter ✓' : 'Sign-in was not completed', 4000); } catch (e) { toast('✕ ' + (e.message || 'Sign-in failed') + ' — if no window opened, use API keys on this device.', 6000); } finally { b.disabled = false; b.textContent = 'Sign in with Puter'; puterUi(); } };
   $('#puterOut').onclick = async () => { await AI.puterSignOut(); puterUi(); toast('Signed out'); };
   $('#puterTest').onclick = async () => { const b = $('#puterTest'); b.textContent = '…'; try { const r = await AI.testPuter(); toast(r.ok ? 'Puter login works ✓' : '✕ ' + r.message, 4500); } catch (e) { toast('✕ ' + e.message, 4500); } finally { b.textContent = 'Test'; puterUi(); } };
-  $('#saveAi').onclick = () => { const prov = $('#aiPrimary').value, custom = $('#aiCustomModel').value.trim(), chosen = custom || $('#aiModel').value; st.aiPrimary = prov; st.aiModels = { ...(st.aiModels || {}), [prov]: chosen }; if (prov === 'gemini' && chosen) st.aiModel = chosen; st.aiMode = $('#aiMode').value; st.aiAutoFallback = $('#aiFallback').checked; st.aiCross = $('#aiCross').checked; st.aiGuard = $('#aiGuard').checked; st.aiPool = $('#aiPool').checked; st.puterModel = $('#puterCustom').value.trim() || $('#puterModel').value; st.analystDaily = Number($('#analystDaily').value) || 5; st.tutorLang = $('#tutorLangSet').value; if (!st.customBaseUrl && $('#customBase').value.trim()) st.customBaseUrl = $('#customBase').value.trim(); save(); renderKeys(); toast('AI settings saved ✓'); };
+  $('#saveAi').onclick = () => { const prov = $('#aiPrimary').value, custom = $('#aiCustomModel').value.trim(), chosen = custom || $('#aiModel').value; st.aiPrimary = prov; st.aiModels = { ...(st.aiModels || {}), [prov]: chosen }; if (prov === 'gemini' && chosen) st.aiModel = chosen; st.aiMode = $('#aiMode').value; st.aiAutoFallback = $('#aiFallback').checked; st.aiCross = $('#aiCross').checked; st.aiMulti = $('#aiMulti').checked; st.aiMultiProviders = $$('[data-mp]').filter(c => c.checked).map(c => c.dataset.mp); if (st.aiMulti && st.aiMultiProviders.length < 2) toast('Tip: tick at least two AIs (with keys) for rotation to have an effect'); st.aiGuard = $('#aiGuard').checked; st.puterModel = $('#puterCustom').value.trim() || $('#puterModel').value; st.analystDaily = Number($('#analystDaily').value) || 5; st.tutorLang = $('#tutorLangSet').value; if (!st.customBaseUrl && $('#customBase').value.trim()) st.customBaseUrl = $('#customBase').value.trim(); save(); renderKeys(); toast('AI settings saved ✓'); };
   $('#saveLangs').onclick = () => { const picks = [...new Set([1, 2, 3, 4, 5, 6, 7, 8].map(n => $('#lang' + n + 'Set')?.value).filter(Boolean))]; st.langs = picks.length ? picks : ['original']; st.langMode = $('#langModeSet').value === 'multi' && picks.length > 1 ? 'multi' : 'single'; save(); toast('Language preference saved ✓'); };
   $('#saveProfile').onclick = () => { st.name = $('#userName').value.trim() || 'Learner'; $('#profileName').textContent = st.name; save(); toast('Profile updated'); };
   Store.estimate().then(e => { const info = $('#storageInfo'), bar = $('#storageBarFill'); if (!e || !info || Store.engine() !== 'indexeddb') return; const free = Math.max(0, e.quotaMB - e.usedMB); const fmt = mb => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`; bar.style.width = `${Math.min(100, Math.max(1, e.usedMB / e.quotaMB * 100)).toFixed(1)}%`; info.textContent = `Large storage active — no 5 MB limit · about ${fmt(free)} of space still available for quizzes`; });
